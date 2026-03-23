@@ -1,0 +1,223 @@
+using System.Drawing;
+
+namespace DevToy;
+
+record PopupTheme(
+    string Name,
+    Color BgDark,
+    Color BgHeader,
+    Color Primary,
+    Color PrimaryLight,
+    Color PrimaryDim,
+    Color TextPrimary,
+    Color TextSecondary,
+    Color Border,
+    Color SuccessColor,
+    Color SuccessBg,
+    Color ErrorColor,
+    Color ErrorBg,
+    // Sparkle palette
+    Color Sparkle1,
+    Color Sparkle2,
+    Color Sparkle3,
+    Color Sparkle4
+);
+
+static class Themes
+{
+    public static readonly PopupTheme[] All =
+    [
+        new("Ocean Blue",
+            BgDark: Color.FromArgb(15, 20, 30),
+            BgHeader: Color.FromArgb(12, 16, 26),
+            Primary: Color.FromArgb(56, 132, 244),
+            PrimaryLight: Color.FromArgb(96, 165, 250),
+            PrimaryDim: Color.FromArgb(30, 58, 110),
+            TextPrimary: Color.FromArgb(235, 240, 255),
+            TextSecondary: Color.FromArgb(160, 175, 210),
+            Border: Color.FromArgb(40, 55, 85),
+            SuccessColor: Color.FromArgb(52, 211, 153),
+            SuccessBg: Color.FromArgb(16, 52, 40),
+            ErrorColor: Color.FromArgb(248, 113, 113),
+            ErrorBg: Color.FromArgb(60, 20, 20),
+            Sparkle1: Color.FromArgb(56, 132, 244),
+            Sparkle2: Color.FromArgb(96, 165, 250),
+            Sparkle3: Color.FromArgb(140, 180, 255),
+            Sparkle4: Color.FromArgb(220, 230, 255)
+        ),
+
+        new("Deep Purple",
+            BgDark: Color.FromArgb(18, 14, 30),
+            BgHeader: Color.FromArgb(14, 10, 24),
+            Primary: Color.FromArgb(139, 92, 246),
+            PrimaryLight: Color.FromArgb(167, 139, 250),
+            PrimaryDim: Color.FromArgb(55, 30, 110),
+            TextPrimary: Color.FromArgb(240, 235, 255),
+            TextSecondary: Color.FromArgb(175, 160, 210),
+            Border: Color.FromArgb(55, 40, 85),
+            SuccessColor: Color.FromArgb(52, 211, 153),
+            SuccessBg: Color.FromArgb(16, 52, 40),
+            ErrorColor: Color.FromArgb(248, 113, 113),
+            ErrorBg: Color.FromArgb(60, 20, 20),
+            Sparkle1: Color.FromArgb(139, 92, 246),
+            Sparkle2: Color.FromArgb(167, 139, 250),
+            Sparkle3: Color.FromArgb(196, 181, 253),
+            Sparkle4: Color.FromArgb(237, 233, 254)
+        ),
+
+        new("Emerald",
+            BgDark: Color.FromArgb(12, 22, 18),
+            BgHeader: Color.FromArgb(8, 18, 14),
+            Primary: Color.FromArgb(16, 185, 129),
+            PrimaryLight: Color.FromArgb(52, 211, 153),
+            PrimaryDim: Color.FromArgb(12, 60, 45),
+            TextPrimary: Color.FromArgb(230, 255, 245),
+            TextSecondary: Color.FromArgb(150, 210, 185),
+            Border: Color.FromArgb(30, 65, 50),
+            SuccessColor: Color.FromArgb(52, 211, 153),
+            SuccessBg: Color.FromArgb(16, 52, 40),
+            ErrorColor: Color.FromArgb(248, 113, 113),
+            ErrorBg: Color.FromArgb(60, 20, 20),
+            Sparkle1: Color.FromArgb(16, 185, 129),
+            Sparkle2: Color.FromArgb(52, 211, 153),
+            Sparkle3: Color.FromArgb(110, 231, 183),
+            Sparkle4: Color.FromArgb(209, 250, 229)
+        ),
+
+        new("Amber",
+            BgDark: Color.FromArgb(24, 18, 10),
+            BgHeader: Color.FromArgb(20, 14, 6),
+            Primary: Color.FromArgb(245, 158, 11),
+            PrimaryLight: Color.FromArgb(251, 191, 36),
+            PrimaryDim: Color.FromArgb(80, 50, 10),
+            TextPrimary: Color.FromArgb(255, 248, 230),
+            TextSecondary: Color.FromArgb(210, 180, 140),
+            Border: Color.FromArgb(75, 55, 25),
+            SuccessColor: Color.FromArgb(52, 211, 153),
+            SuccessBg: Color.FromArgb(16, 52, 40),
+            ErrorColor: Color.FromArgb(248, 113, 113),
+            ErrorBg: Color.FromArgb(60, 20, 20),
+            Sparkle1: Color.FromArgb(245, 158, 11),
+            Sparkle2: Color.FromArgb(251, 191, 36),
+            Sparkle3: Color.FromArgb(252, 211, 77),
+            Sparkle4: Color.FromArgb(254, 243, 199)
+        ),
+
+        new("Rose",
+            BgDark: Color.FromArgb(25, 14, 18),
+            BgHeader: Color.FromArgb(20, 10, 14),
+            Primary: Color.FromArgb(244, 63, 94),
+            PrimaryLight: Color.FromArgb(251, 113, 133),
+            PrimaryDim: Color.FromArgb(80, 20, 35),
+            TextPrimary: Color.FromArgb(255, 235, 240),
+            TextSecondary: Color.FromArgb(210, 160, 175),
+            Border: Color.FromArgb(75, 35, 45),
+            SuccessColor: Color.FromArgb(52, 211, 153),
+            SuccessBg: Color.FromArgb(16, 52, 40),
+            ErrorColor: Color.FromArgb(248, 113, 113),
+            ErrorBg: Color.FromArgb(60, 20, 20),
+            Sparkle1: Color.FromArgb(244, 63, 94),
+            Sparkle2: Color.FromArgb(251, 113, 133),
+            Sparkle3: Color.FromArgb(253, 164, 175),
+            Sparkle4: Color.FromArgb(255, 228, 230)
+        ),
+
+        new("Cyberpunk",
+            BgDark: Color.FromArgb(10, 10, 20),
+            BgHeader: Color.FromArgb(6, 6, 16),
+            Primary: Color.FromArgb(0, 255, 200),
+            PrimaryLight: Color.FromArgb(80, 255, 220),
+            PrimaryDim: Color.FromArgb(0, 60, 48),
+            TextPrimary: Color.FromArgb(220, 255, 248),
+            TextSecondary: Color.FromArgb(130, 200, 180),
+            Border: Color.FromArgb(20, 60, 50),
+            SuccessColor: Color.FromArgb(0, 255, 200),
+            SuccessBg: Color.FromArgb(0, 40, 32),
+            ErrorColor: Color.FromArgb(255, 60, 100),
+            ErrorBg: Color.FromArgb(60, 10, 20),
+            Sparkle1: Color.FromArgb(0, 255, 200),
+            Sparkle2: Color.FromArgb(0, 200, 255),
+            Sparkle3: Color.FromArgb(180, 0, 255),
+            Sparkle4: Color.FromArgb(255, 255, 255)
+        ),
+
+        new("Mono",
+            BgDark: Color.FromArgb(0, 0, 0),
+            BgHeader: Color.FromArgb(10, 10, 10),
+            Primary: Color.FromArgb(200, 200, 200),
+            PrimaryLight: Color.FromArgb(240, 240, 240),
+            PrimaryDim: Color.FromArgb(40, 40, 40),
+            TextPrimary: Color.FromArgb(245, 245, 245),
+            TextSecondary: Color.FromArgb(160, 160, 160),
+            Border: Color.FromArgb(50, 50, 50),
+            SuccessColor: Color.FromArgb(200, 200, 200),
+            SuccessBg: Color.FromArgb(25, 25, 25),
+            ErrorColor: Color.FromArgb(255, 100, 100),
+            ErrorBg: Color.FromArgb(40, 10, 10),
+            Sparkle1: Color.FromArgb(255, 255, 255),
+            Sparkle2: Color.FromArgb(200, 200, 200),
+            Sparkle3: Color.FromArgb(150, 150, 150),
+            Sparkle4: Color.FromArgb(100, 100, 100)
+        ),
+
+        new("Lite",
+            BgDark: Color.FromArgb(245, 245, 248),
+            BgHeader: Color.FromArgb(250, 251, 254),
+            Primary: Color.FromArgb(56, 132, 244),
+            PrimaryLight: Color.FromArgb(96, 165, 250),
+            PrimaryDim: Color.FromArgb(210, 225, 245),
+            TextPrimary: Color.FromArgb(50, 60, 80),
+            TextSecondary: Color.FromArgb(110, 120, 140),
+            Border: Color.FromArgb(210, 215, 225),
+            SuccessColor: Color.FromArgb(22, 163, 74),
+            SuccessBg: Color.FromArgb(220, 252, 231),
+            ErrorColor: Color.FromArgb(220, 38, 38),
+            ErrorBg: Color.FromArgb(254, 226, 226),
+            Sparkle1: Color.FromArgb(56, 132, 244),
+            Sparkle2: Color.FromArgb(96, 165, 250),
+            Sparkle3: Color.FromArgb(190, 210, 255),
+            Sparkle4: Color.FromArgb(140, 170, 220)
+        ),
+    ];
+
+    public static PopupTheme Default => All[0];
+
+    public static PopupTheme LoadSaved()
+    {
+        var settings = AppSettings.Load();
+        return All.FirstOrDefault(t => t.Name == settings.Theme) ?? Default;
+    }
+
+    public static void Save(PopupTheme theme)
+    {
+        var settings = AppSettings.Load();
+        AppSettings.Save(settings with { Theme = theme.Name });
+    }
+
+    /// <summary>
+    /// Create a simple colored icon programmatically for the tray and window.
+    /// </summary>
+    public static Icon CreateAppIcon(Color primary)
+    {
+        using var bmp = new Bitmap(32, 32);
+        using var g = Graphics.FromImage(bmp);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.Clear(Color.Transparent);
+
+        // Filled circle with primary color
+        using var brush = new SolidBrush(primary);
+        g.FillEllipse(brush, 2, 2, 28, 28);
+
+        // "C" letter in white
+        using var font = new Font("Segoe UI", 16f, FontStyle.Bold);
+        using var textBrush = new SolidBrush(Color.White);
+        using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        g.DrawString("D", font, textBrush, new RectangleF(0, 0, 32, 32), sf);
+
+        // Outer glow ring
+        using var pen = new Pen(Color.FromArgb(100, primary), 1.5f);
+        g.DrawEllipse(pen, 1, 1, 30, 30);
+
+        return Icon.FromHandle(bmp.GetHicon());
+    }
+}

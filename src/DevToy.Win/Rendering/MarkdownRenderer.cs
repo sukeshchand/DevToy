@@ -1,0 +1,335 @@
+using System.Net;
+using System.Text;
+using System.Text.RegularExpressions;
+
+namespace DevToy;
+
+static class MarkdownRenderer
+{
+    public static string ToHtml(string markdown, string accentColorHex, string textColorHex = "#a0afd2", string headingColorHex = "#ebf0ff", string bgColorHex = "transparent", string codeBgHex = "rgba(12, 16, 26, 0.8)", string? themePrimaryHex = null)
+    {
+        var lines = markdown.Replace("\r\n", "\n").Split('\n');
+        var sb = new StringBuilder();
+        bool inList = false;
+        bool inCodeBlock = false;
+        bool inTable = false;
+        bool tableHeaderDone = false;
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine;
+
+            // Fenced code blocks (```)
+            if (line.TrimStart().StartsWith("```"))
+            {
+                if (inCodeBlock)
+                {
+                    sb.AppendLine("</code></pre>");
+                    inCodeBlock = false;
+                }
+                else
+                {
+                    if (inList) { sb.AppendLine("</ul>"); inList = false; }
+                    if (inTable) { sb.AppendLine("</tbody></table>"); inTable = false; tableHeaderDone = false; }
+                    sb.AppendLine("<pre><code>");
+                    inCodeBlock = true;
+                }
+                continue;
+            }
+
+            if (inCodeBlock)
+            {
+                sb.AppendLine(WebUtility.HtmlEncode(line));
+                continue;
+            }
+
+            // Table handling: lines that look like | col | col |
+            bool isTableRow = Regex.IsMatch(line.Trim(), @"^\|.+\|$");
+            bool isSeparator = isTableRow && Regex.IsMatch(line.Trim(), @"^\|[\s\-:| ]+\|$");
+
+            if (isTableRow)
+            {
+                if (inList) { sb.AppendLine("</ul>"); inList = false; }
+
+                if (!inTable)
+                {
+                    // Start a new table — this first row is the header
+                    inTable = true;
+                    tableHeaderDone = false;
+                    sb.AppendLine("<table><thead><tr>");
+                    foreach (var cell in ParseTableCells(line))
+                        sb.Append($"<th>{InlineMarkdown(cell)}</th>");
+                    sb.AppendLine("</tr></thead>");
+                    continue;
+                }
+
+                if (isSeparator)
+                {
+                    // Separator row (|---|---|) — skip it, start tbody
+                    if (!tableHeaderDone)
+                    {
+                        sb.AppendLine("<tbody>");
+                        tableHeaderDone = true;
+                    }
+                    continue;
+                }
+
+                // Regular data row
+                if (!tableHeaderDone)
+                {
+                    sb.AppendLine("<tbody>");
+                    tableHeaderDone = true;
+                }
+                sb.Append("<tr>");
+                foreach (var cell in ParseTableCells(line))
+                    sb.Append($"<td>{InlineMarkdown(cell)}</td>");
+                sb.AppendLine("</tr>");
+                continue;
+            }
+
+            // Not a table row — close table if open
+            if (inTable)
+            {
+                sb.AppendLine("</tbody></table>");
+                inTable = false;
+                tableHeaderDone = false;
+            }
+
+            // Close list if non-list line
+            if (inList && !Regex.IsMatch(line, @"^\s*[-*]\s") && !Regex.IsMatch(line, @"^\s*\d+\.\s") && line.Trim().Length > 0)
+            {
+                sb.AppendLine("</ul>");
+                inList = false;
+            }
+
+            // Empty line
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                if (inList) { sb.AppendLine("</ul>"); inList = false; }
+                sb.AppendLine("<br/>");
+                continue;
+            }
+
+            // Horizontal rule (---, ***, ___)
+            if (Regex.IsMatch(line.Trim(), @"^[-*_]{3,}$"))
+            {
+                if (inList) { sb.AppendLine("</ul>"); inList = false; }
+                sb.AppendLine("<hr/>");
+                continue;
+            }
+
+            // Unordered list items (- or *)
+            var ulMatch = Regex.Match(line, @"^\s*[-*]\s+(.+)$");
+            if (ulMatch.Success)
+            {
+                if (!inList) { sb.AppendLine("<ul>"); inList = true; }
+                sb.AppendLine($"<li>{InlineMarkdown(ulMatch.Groups[1].Value)}</li>");
+                continue;
+            }
+
+            // Ordered list items (1. 2. etc)
+            var olMatch = Regex.Match(line, @"^\s*\d+\.\s+(.+)$");
+            if (olMatch.Success)
+            {
+                if (!inList) { sb.AppendLine("<ul>"); inList = true; }
+                sb.AppendLine($"<li>{InlineMarkdown(olMatch.Groups[1].Value)}</li>");
+                continue;
+            }
+
+            // Headings (## etc)
+            var headingMatch = Regex.Match(line, @"^(#{1,3})\s+(.+)$");
+            if (headingMatch.Success)
+            {
+                int level = headingMatch.Groups[1].Value.Length;
+                sb.AppendLine($"<h{level}>{InlineMarkdown(headingMatch.Groups[2].Value)}</h{level}>");
+                continue;
+            }
+
+            // Regular paragraph
+            sb.AppendLine($"<p>{InlineMarkdown(line)}</p>");
+        }
+
+        if (inList) sb.AppendLine("</ul>");
+        if (inTable) sb.AppendLine("</tbody></table>");
+        if (inCodeBlock) sb.AppendLine("</code></pre>");
+
+        return WrapInHtmlDocument(sb.ToString(), accentColorHex, textColorHex, headingColorHex, bgColorHex, codeBgHex, themePrimaryHex ?? accentColorHex);
+    }
+
+    private static string InlineMarkdown(string text)
+    {
+        text = WebUtility.HtmlEncode(text);
+
+        // Bold: **text** or __text__
+        text = Regex.Replace(text, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+        text = Regex.Replace(text, @"__(.+?)__", "<strong>$1</strong>");
+
+        // Italic: *text* or _text_ (but not inside words for underscore)
+        text = Regex.Replace(text, @"(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)", "<em>$1</em>");
+        text = Regex.Replace(text, @"(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)", "<em>$1</em>");
+
+        // Inline code: `text`
+        text = Regex.Replace(text, @"`(.+?)`", "<code class=\"inline\">$1</code>");
+
+        return text;
+    }
+
+    private static string[] ParseTableCells(string line)
+    {
+        // Trim outer pipes and split by |
+        var trimmed = line.Trim();
+        if (trimmed.StartsWith("|")) trimmed = trimmed[1..];
+        if (trimmed.EndsWith("|")) trimmed = trimmed[..^1];
+        return trimmed.Split('|').Select(c => c.Trim()).ToArray();
+    }
+
+    private static string WrapInHtmlDocument(string body, string accentColorHex, string textColorHex, string headingColorHex, string bgColorHex, string codeBgHex, string themePrimaryHex)
+    {
+        return $@"<!DOCTYPE html>
+<html>
+<head>
+<meta charset=""utf-8""/>
+<style>
+    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+    body {{
+        font-family: 'Segoe UI', sans-serif;
+        font-size: 15px;
+        color: {textColorHex};
+        background: {bgColorHex};
+        padding: 4px 14px 20px 4px;
+        line-height: 1.6;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }}
+    p {{ margin: 3px 0; }}
+    strong {{ color: {headingColorHex}; font-weight: 600; }}
+    em {{ font-style: italic; opacity: 0.7; }}
+    code.inline {{
+        background: rgba(56, 132, 244, 0.12);
+        color: {accentColorHex};
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: 'Cascadia Code', 'Consolas', monospace;
+        font-size: 14px;
+        border: 1px solid rgba(56, 132, 244, 0.2);
+    }}
+    pre {{
+        background: {codeBgHex};
+        border-left: 3px solid {accentColorHex};
+        padding: 10px 14px;
+        margin: 8px 0;
+        border-radius: 6px;
+        overflow-x: auto;
+    }}
+    pre code {{
+        font-family: 'Cascadia Code', 'Consolas', monospace;
+        font-size: 14px;
+        color: {textColorHex};
+        background: none;
+        padding: 0;
+        border: none;
+    }}
+    ul {{
+        margin: 4px 0 4px 8px;
+        padding-left: 18px;
+    }}
+    li {{
+        margin: 3px 0;
+    }}
+    li::marker {{
+        color: {accentColorHex};
+    }}
+    h1, h2, h3 {{
+        color: {headingColorHex};
+        margin: 8px 0 4px 0;
+    }}
+    h1 {{ font-size: 18px; }}
+    h2 {{ font-size: 16px; }}
+    h3 {{ font-size: 15px; }}
+    table {{
+        border-collapse: collapse;
+        width: 100%;
+        margin: 8px 0;
+        font-size: 13px;
+    }}
+    th, td {{
+        border: 1px solid rgba(56, 132, 244, 0.2);
+        padding: 6px 10px;
+        text-align: left;
+    }}
+    th {{
+        background: rgba(56, 132, 244, 0.1);
+        color: {headingColorHex};
+        font-weight: 600;
+        font-size: 13px;
+    }}
+    tr:nth-child(even) {{
+        background: rgba(56, 132, 244, 0.04);
+    }}
+    td {{
+        color: {textColorHex};
+    }}
+    hr {{
+        border: none;
+        border-top: 1px solid {accentColorHex}33;
+        margin: 10px 0;
+    }}
+    .user-block {{
+        background: {themePrimaryHex}10;
+        border: 1px solid {themePrimaryHex}25;
+        border-left: 4px solid {themePrimaryHex}77;
+        padding: 12px 16px;
+        margin: 0 0 10px 0;
+        border-radius: 0 8px 8px 0;
+    }}
+    .user-block .label {{
+        color: {themePrimaryHex};
+        font-weight: 700;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 6px;
+        opacity: 0.85;
+    }}
+    .user-block .label::before {{
+        content: '\25B8 ';
+    }}
+    .user-block .text {{
+        color: {headingColorHex};
+        font-family: 'Cascadia Code', 'Consolas', monospace;
+        font-size: 14px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }}
+    .claude-block {{
+        background: transparent;
+        border-left: 3px solid {themePrimaryHex}33;
+        border-radius: 0;
+        padding: 8px 14px 8px 14px;
+        margin: 4px 0 0 0;
+    }}
+    .claude-label {{
+        color: {themePrimaryHex};
+        font-weight: 700;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 6px;
+    }}
+    .claude-label::before {{
+        content: '\2726 ';
+    }}
+    .claude-content {{
+    }}
+    br {{ display: block; content: ''; margin: 4px 0; }}
+    ::-webkit-scrollbar {{ width: 6px; }}
+    ::-webkit-scrollbar-track {{ background: transparent; }}
+    ::-webkit-scrollbar-thumb {{ background: rgba(56, 132, 244, 0.3); border-radius: 3px; }}
+    ::-webkit-scrollbar-thumb:hover {{ background: rgba(56, 132, 244, 0.5); }}
+</style>
+</head>
+<body>{body}</body>
+</html>";
+    }
+}
