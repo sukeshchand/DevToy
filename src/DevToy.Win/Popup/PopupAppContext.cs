@@ -35,6 +35,9 @@ class PopupAppContext : ApplicationContext
 
         Task.Run(() => PipeServerLoop(_cts.Token));
 
+        // Exit when popup requests it (e.g. after update)
+        _popupForm.ExitRequested += () => ExitApp();
+
         // Start update checker
         UpdateChecker.UpdateAvailable += metadata =>
         {

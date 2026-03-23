@@ -21,30 +21,75 @@ static class Updater
 
             string installDir = Path.GetDirectoryName(Application.ExecutablePath)!;
             string currentExe = Application.ExecutablePath;
+            string currentExeName = Path.GetFileName(currentExe);
             string updateExe = Path.Combine(installDir, "DevToy.update.exe");
-            string batchPath = Path.Combine(installDir, "_update.bat");
+            string scriptPath = Path.Combine(installDir, "_update.ps1");
+            int currentPid = Environment.ProcessId;
 
             // Step 1: Copy new exe from network to local staging file
             File.Copy(sourceExe, updateExe, overwrite: true);
 
-            // Step 2: Write the updater batch script
-            // Note: Hook script regeneration happens on startup (see EnsureHookScript)
-            // so the NEW exe updates the script when it launches.
-            var sb = new StringBuilder();
-            sb.AppendLine("@echo off");
-            sb.AppendLine("timeout /t 2 /nobreak >nul");
-            sb.AppendLine($"if exist \"{currentExe}\" del /f /q \"{currentExe}\"");
-            sb.AppendLine($"if exist \"{updateExe}\" rename \"{updateExe}\" \"{Path.GetFileName(currentExe)}\"");
-            sb.AppendLine($"start \"\" \"{currentExe}\"");
-            sb.AppendLine($"del /f /q \"{batchPath}\" & exit");
+            // Step 2: Write the updater PowerShell script
+            string ps1 = $@"
+# DevToy Auto-Updater
+# Wait for the original process to exit, then swap the exe and relaunch.
 
-            File.WriteAllText(batchPath, sb.ToString(), Encoding.ASCII);
+$exePath   = '{currentExe.Replace("'", "''")}'
+$exeName   = '{currentExeName.Replace("'", "''")}'
+$updateExe = '{updateExe.Replace("'", "''")}'
+$installDir = '{installDir.Replace("'", "''")}'
+$targetPid  = {currentPid}
+$scriptPath = '{scriptPath.Replace("'", "''")}'
 
-            // Step 4: Launch the batch script and exit
+# Phase 1: Wait for the process to exit (check every 2 sec, up to 10 sec)
+$waited = 0
+while ($waited -lt 10) {{
+    $proc = Get-Process -Id $targetPid -ErrorAction SilentlyContinue
+    if (-not $proc) {{ break }}
+    Start-Sleep -Seconds 2
+    $waited += 2
+}}
+
+# Phase 2: If still running, try to kill it (up to 10 attempts)
+for ($attempt = 1; $attempt -le 10; $attempt++) {{
+    $proc = Get-Process -Id $targetPid -ErrorAction SilentlyContinue
+    if (-not $proc) {{ break }}
+    try {{
+        Stop-Process -Id $targetPid -Force -ErrorAction Stop
+        Start-Sleep -Seconds 1
+    }} catch {{
+        Start-Sleep -Seconds 1
+    }}
+}}
+
+# Phase 3: Swap the exe
+Start-Sleep -Milliseconds 500
+if (Test-Path $exePath) {{
+    Remove-Item $exePath -Force -ErrorAction SilentlyContinue
+}}
+if (Test-Path $updateExe) {{
+    Rename-Item $updateExe $exeName -Force
+}}
+
+# Phase 4: Relaunch
+if (Test-Path $exePath) {{
+    Start-Process -FilePath $exePath
+}}
+
+# Phase 5: Self-cleanup
+Start-Sleep -Seconds 2
+Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue
+";
+
+            File.WriteAllText(scriptPath, ps1, Encoding.UTF8);
+
+            // Step 3: Launch the PowerShell script and exit
             Process.Start(new ProcessStartInfo
             {
-                FileName = batchPath,
-                UseShellExecute = true,
+                FileName = "powershell.exe",
+                Arguments = $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{scriptPath}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
                 WorkingDirectory = installDir,
             });

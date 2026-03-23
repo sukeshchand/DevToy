@@ -10,6 +10,12 @@
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <Version>1.0.62</Version>
+    <FileVersion>1.0.62.0</FileVersion>
+    <AssemblyVersion>1.0.62.0</AssemblyVersion>
+    <Product>DevToy</Product>
+    <Company>DevToy</Company>
+    <Description>Developer utility toolkit for Windows</Description>
   </PropertyGroup>
 
   <ItemGroup>

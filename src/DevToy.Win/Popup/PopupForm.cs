@@ -67,6 +67,7 @@ class PopupForm : Form
     public DateTime SnoozeUntil => _snoozeUntil;
 
     public event Action? SnoozeChanged;
+    public event Action? ExitRequested;
 
     public PopupForm(PopupTheme theme)
     {
@@ -939,14 +940,27 @@ class PopupForm : Form
         _updateButton.Text = "Updating...";
         _updateButton.Enabled = false;
 
-        var result = Updater.Apply();
-        if (result.Success)
+        try
         {
-            Application.Exit();
+            var result = Updater.Apply();
+            if (result.Success)
+            {
+                _forceExit = true;
+                _typeTimer.Stop();
+                _sparkleTimer.Stop();
+                Environment.Exit(0);
+            }
+            else
+            {
+                MessageBox.Show(this, result.Message, "Update Failed",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                _updateButton.Text = "Update";
+                _updateButton.Enabled = true;
+            }
         }
-        else
+        catch (Exception ex)
         {
-            MessageBox.Show(this, result.Message, "Update Failed",
+            MessageBox.Show(this, ex.Message, "Update Failed",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
             _updateButton.Text = "Update";
             _updateButton.Enabled = true;
