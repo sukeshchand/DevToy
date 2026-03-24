@@ -41,10 +41,10 @@ class SetupForm : Form
         Icon = SystemIcons.Information;
 
         _userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        _toolsDir = Path.Combine(_userProfile, ".claude", "tools", "DevToy");
-        _installExePath = Path.Combine(_toolsDir, "DevToy.exe");
-        _hooksDir = Path.Combine(_userProfile, ".claude", "hooks");
-        _settingsPath = Path.Combine(_userProfile, ".claude", "settings.json");
+        _toolsDir = AppPaths.Root;
+        _installExePath = AppPaths.ExePath;
+        _hooksDir = AppPaths.ClaudeHooksDir;
+        _settingsPath = AppPaths.ClaudeSettingsFile;
         _currentExePath = Application.ExecutablePath;
 
         string hooksDirJsonEscaped = _hooksDir.Replace("\\", "\\\\");

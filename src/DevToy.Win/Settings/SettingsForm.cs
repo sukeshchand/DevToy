@@ -26,20 +26,20 @@ class SettingsForm : Form
         _currentTheme = currentTheme;
 
         Text = "DevToy Settings";
-        FormBorderStyle = FormBorderStyle.FixedDialog;
+        FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ShowInTaskbar = false;
+        Size = new Size(700, 560);
+        ShowInTaskbar = true;
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(520, 540);
         BackColor = currentTheme.BgDark;
         ForeColor = currentTheme.TextPrimary;
         Font = new Font("Segoe UI", 10f);
         Icon = Themes.CreateAppIcon(currentTheme.Primary);
 
         int leftMargin = 24;
-        int contentWidth = ClientSize.Width - leftMargin * 2;
+        int contentWidth = 652;
 
         // --- Title ---
         int y = 16;
@@ -67,13 +67,14 @@ class SettingsForm : Form
 
         // --- TabControl (owner-drawn) ---
         int tabCount = 5;
+        int tabWidth = contentWidth / tabCount;
         _tabControl = new ThemedTabControl(currentTheme)
         {
             Location = new Point(leftMargin, y),
             Size = new Size(contentWidth, 440),
-            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+            Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold),
             SizeMode = TabSizeMode.Fixed,
-            ItemSize = new Size(contentWidth / tabCount, 30),
+            ItemSize = new Size(tabWidth, 32),
             Padding = new Point(0, 0),
         };
         Controls.Add(_tabControl);
@@ -82,7 +83,24 @@ class SettingsForm : Form
         int tabInner = contentWidth - tp * 2 - 2;
 
         // =============================================
-        // TAB 0: Appearance
+        // TAB 0: General
+        // =============================================
+        var generalPage = CreateTabPage("General", currentTheme);
+        _tabControl.TabPages.Add(generalPage);
+
+        var generalPlaceholder = new Label
+        {
+            Text = "More settings coming soon.",
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = currentTheme.TextSecondary,
+            AutoSize = true,
+            Location = new Point(tp, tp),
+            BackColor = Color.Transparent,
+        };
+        generalPage.Controls.Add(generalPlaceholder);
+
+        // =============================================
+        // TAB 1: Appearance
         // =============================================
         var appearancePage = CreateTabPage("Appearance", currentTheme);
         _tabControl.TabPages.Add(appearancePage);
@@ -139,7 +157,7 @@ class SettingsForm : Form
         appearancePage.Controls.Add(_themePreview);
 
         // =============================================
-        // TAB 1: Claude CLI
+        // TAB 2: Claude CLI
         // =============================================
         var claudePage = CreateTabPage("Claude CLI", currentTheme);
         _tabControl.TabPages.Add(claudePage);
@@ -254,111 +272,74 @@ class SettingsForm : Form
         claudePage.Controls.Add(historyCheck);
         cy += 30;
 
-        // --- Active Sessions group ---
+        // --- Status Line group ---
         claudePage.Controls.Add(CreateSeparator(tp, cy, tabInner));
         cy += 10;
 
-        var sessionsLabel = CreateSectionLabel("ACTIVE SESSIONS", tp, cy);
-        claudePage.Controls.Add(sessionsLabel);
-        cy += 24;
+        var statusLineLabel = CreateSectionLabel("STATUS LINE", tp, cy);
+        claudePage.Controls.Add(statusLineLabel);
+        cy += 26;
 
-        var sessionGrid = new DataGridView
+        var statusLineCheck = new CheckBox
         {
-            Location = new Point(tp, cy),
-            Size = new Size(tabInner, 120),
-            Font = new Font("Segoe UI", 8.5f),
-            BackgroundColor = currentTheme.BgHeader,
+            Text = "Enable Claude Code status line",
+            Font = new Font("Segoe UI", 9.5f),
             ForeColor = currentTheme.TextPrimary,
-            GridColor = currentTheme.Border,
-            BorderStyle = BorderStyle.FixedSingle,
-            CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
-            ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single,
-            RowHeadersVisible = false,
-            AllowUserToAddRows = false,
-            AllowUserToDeleteRows = false,
-            AllowUserToResizeRows = false,
-            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-            MultiSelect = false,
-            ReadOnly = true,
-            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
-            ColumnHeadersHeight = 28,
-            RowTemplate = { Height = 26 },
-            ScrollBars = ScrollBars.Vertical,
-            EnableHeadersVisualStyles = false,
-        };
-
-        sessionGrid.DefaultCellStyle.BackColor = currentTheme.BgHeader;
-        sessionGrid.DefaultCellStyle.ForeColor = currentTheme.TextPrimary;
-        sessionGrid.DefaultCellStyle.SelectionBackColor = currentTheme.PrimaryDim;
-        sessionGrid.DefaultCellStyle.SelectionForeColor = currentTheme.TextPrimary;
-        sessionGrid.ColumnHeadersDefaultCellStyle.BackColor = currentTheme.BgDark;
-        sessionGrid.ColumnHeadersDefaultCellStyle.ForeColor = currentTheme.TextSecondary;
-        sessionGrid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Bold);
-        sessionGrid.ColumnHeadersDefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft;
-
-        sessionGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "PID", HeaderText = "PID", Width = 55, MinimumWidth = 50, FillWeight = 15 });
-        sessionGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Title", HeaderText = "Window Title", FillWeight = 55 });
-        sessionGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Name", HeaderText = "Session", FillWeight = 30 });
-
-        claudePage.Controls.Add(sessionGrid);
-        cy += 126;
-
-        var sessionCountLabel = new Label
-        {
-            Text = "Click Load to scan active sessions",
-            Font = new Font("Segoe UI", 8.5f),
-            ForeColor = currentTheme.TextSecondary,
-            AutoSize = true,
-            Location = new Point(tp + 118, cy + 4),
             BackColor = Color.Transparent,
-        };
-
-        void RefreshSessions()
-        {
-            sessionGrid.Rows.Clear();
-            var sessions = ClaudeSessionDetector.GetActiveSessions();
-            foreach (var s in sessions)
-            {
-                sessionGrid.Rows.Add(s.Pid.ToString(), s.TabTitle, s.SessionName);
-            }
-            sessionCountLabel.Text = $"{sessions.Count} active";
-        }
-
-        var refreshButton = new RoundedButton
-        {
-            Text = "Load Sessions",
-            Font = new Font("Segoe UI", 8.5f),
-            Size = new Size(110, 26),
+            Checked = ClaudeStatusLine.IsEnabled(),
+            AutoSize = true,
             Location = new Point(tp, cy),
-            FlatStyle = FlatStyle.Flat,
-            BackColor = currentTheme.PrimaryDim,
-            ForeColor = currentTheme.TextSecondary,
             Cursor = Cursors.Hand,
         };
-        refreshButton.FlatAppearance.BorderSize = 0;
-        refreshButton.FlatAppearance.MouseOverBackColor = currentTheme.Primary;
-        refreshButton.Click += (_, _) => RefreshSessions();
 
-        claudePage.Controls.Add(refreshButton);
-        claudePage.Controls.Add(sessionCountLabel);
-
-        // =============================================
-        // TAB 2: General
-        // =============================================
-        var generalPage = CreateTabPage("General", currentTheme);
-        _tabControl.TabPages.Add(generalPage);
-
-        var generalPlaceholder = new Label
+        var statusLineHint = new Label
         {
-            Text = "More settings coming soon.",
-            Font = new Font("Segoe UI", 9.5f),
+            Text = "Shows model, branch, context usage, edit stats in Claude CLI",
+            Font = new Font("Segoe UI", 8.5f),
             ForeColor = currentTheme.TextSecondary,
             AutoSize = true,
-            Location = new Point(tp, tp),
+            Location = new Point(tp + 2, cy + 22),
             BackColor = Color.Transparent,
         };
-        generalPage.Controls.Add(generalPlaceholder);
+
+        var statusLineStatus = new Label
+        {
+            Text = "",
+            Font = new Font("Segoe UI", 8.5f),
+            ForeColor = currentTheme.SuccessColor,
+            AutoSize = true,
+            Location = new Point(tp + 2, cy + 40),
+            BackColor = Color.Transparent,
+        };
+
+        statusLineCheck.CheckedChanged += (_, _) =>
+        {
+            try
+            {
+                if (statusLineCheck.Checked)
+                {
+                    ClaudeStatusLine.Enable();
+                    statusLineStatus.ForeColor = currentTheme.SuccessColor;
+                    statusLineStatus.Text = "Enabled — restart Claude Code to apply";
+                }
+                else
+                {
+                    ClaudeStatusLine.Disable();
+                    statusLineStatus.ForeColor = currentTheme.TextSecondary;
+                    statusLineStatus.Text = "Disabled — restart Claude Code to apply";
+                }
+            }
+            catch (Exception ex)
+            {
+                statusLineStatus.ForeColor = currentTheme.ErrorColor;
+                statusLineStatus.Text = $"Error: {ex.Message}";
+            }
+        };
+
+        claudePage.Controls.Add(statusLineCheck);
+        claudePage.Controls.Add(statusLineHint);
+        claudePage.Controls.Add(statusLineStatus);
+        cy += 60;
 
         // =============================================
         // TAB 3: Advanced
@@ -625,8 +606,7 @@ class SettingsForm : Form
             Font = new Font("Segoe UI", 8f),
             ForeColor = Color.FromArgb(60, 75, 105),
             AutoSize = true,
-            Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
-            Location = new Point(leftMargin, ClientSize.Height - 22),
+            Location = new Point(leftMargin, ClientSize.Height - 30),
             BackColor = Color.Transparent,
         };
         Controls.Add(_versionLabel);
@@ -762,11 +742,13 @@ class SettingsForm : Form
 
     private Label CreateSectionLabel(string text, int x, int y)
     {
+        // Add letter spacing for better readability
+        string spaced = string.Join(" ", text.ToCharArray());
         return new Label
         {
-            Text = text,
-            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
-            ForeColor = _currentTheme.TextSecondary,
+            Text = spaced,
+            Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Bold),
+            ForeColor = _currentTheme.Primary,
             AutoSize = true,
             Location = new Point(x, y),
             BackColor = Color.Transparent,

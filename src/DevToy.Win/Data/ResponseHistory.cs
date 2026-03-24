@@ -12,7 +12,7 @@ record HistoryIndex(string Title, string Type, DateTime Timestamp, string DayFil
 
 static class ResponseHistory
 {
-    private static readonly string _historyDir = Path.Combine(AppSettings.DataDir, "history");
+    private static readonly string _historyDir = AppPaths.ClaudeChatHistoryDir;
 
     private static List<HistoryIndex>? _cachedIndex;
 

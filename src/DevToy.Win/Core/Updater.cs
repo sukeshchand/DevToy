@@ -110,8 +110,7 @@ Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue
     {
         try
         {
-            string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            string hooksDir = Path.Combine(userProfile, ".claude", "hooks");
+            string hooksDir = AppPaths.ClaudeHooksDir;
             string ps1Path = Path.Combine(hooksDir, "Show-DevToy.ps1");
 
             Directory.CreateDirectory(hooksDir);

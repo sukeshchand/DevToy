@@ -10,8 +10,7 @@ static class ClaudeHookManager
     private const string AutoTitleMarkerStart = "<!-- DevToy:AutoTitle:Start -->";
     private const string AutoTitleMarkerEnd = "<!-- DevToy:AutoTitle:End -->";
 
-    private static string ClaudeMdPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "CLAUDE.md");
+    private static string ClaudeMdPath => AppPaths.ClaudeMdFile;
 
     /// <summary>
     /// Enables or disables the auto-title instruction in global CLAUDE.md.
@@ -86,8 +85,7 @@ Where <current_folder_name> is the name of the current working directory (just t
     {
         try
         {
-            string settingsPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "settings.json");
+            string settingsPath = AppPaths.ClaudeSettingsFile;
             if (!File.Exists(settingsPath)) return;
 
             string json = File.ReadAllText(settingsPath);
@@ -115,8 +113,7 @@ Where <current_folder_name> is the name of the current working directory (just t
             File.WriteAllText(settingsPath, root!.ToJsonString(options), Encoding.UTF8);
 
             // Delete old script
-            string oldScript = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "hooks", "Set-FolderTitle.ps1");
+            string oldScript = Path.Combine(AppPaths.ClaudeHooksDir, "Set-FolderTitle.ps1");
             if (File.Exists(oldScript))
                 File.Delete(oldScript);
         }

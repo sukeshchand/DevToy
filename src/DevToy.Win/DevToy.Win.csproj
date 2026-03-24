@@ -10,9 +10,9 @@
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <Version>1.0.62</Version>
-    <FileVersion>1.0.62.0</FileVersion>
-    <AssemblyVersion>1.0.62.0</AssemblyVersion>
+    <Version>1.0.64</Version>
+    <FileVersion>1.0.64.0</FileVersion>
+    <AssemblyVersion>1.0.64.0</AssemblyVersion>
     <Product>DevToy</Product>
     <Company>DevToy</Company>
     <Description>Developer utility toolkit for Windows</Description>
@@ -20,6 +20,10 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Scripts\context-bar.ps1" LogicalName="DevToy.Scripts.context-bar.ps1" />
   </ItemGroup>
 
   <!-- Exclude XML doc files and PDB from publish output -->

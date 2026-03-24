@@ -18,12 +18,11 @@ static class Uninstaller
     {
         cleanupBatPath = null;
         var log = new StringBuilder();
-        string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        string toolsDir = Path.Combine(userProfile, ".claude", "tools", "DevToy");
-        string hooksDir = Path.Combine(userProfile, ".claude", "hooks");
-        string settingsPath = Path.Combine(userProfile, ".claude", "settings.json");
+        string toolsDir = AppPaths.Root;
+        string hooksDir = AppPaths.ClaudeHooksDir;
+        string settingsPath = AppPaths.ClaudeSettingsFile;
         string runningExe = Application.ExecutablePath;
-        string toolsExe = Path.Combine(toolsDir, "DevToy.exe");
+        string toolsExe = AppPaths.ExePath;
 
         try
         {

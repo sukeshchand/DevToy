@@ -256,7 +256,7 @@ static class Themes
         ),
     ];
 
-    public static PopupTheme Default => All[0];
+    public static PopupTheme Default => All.First(t => t.Name == "Warm Gray");
 
     public static PopupTheme LoadSaved()
     {

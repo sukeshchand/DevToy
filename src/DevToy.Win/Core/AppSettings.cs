@@ -24,10 +24,9 @@ record AppSettingsData
 
 static class AppSettings
 {
-    private static readonly string _dataDir = Path.Combine(
-        Path.GetDirectoryName(Application.ExecutablePath)!, "_data");
+    private static readonly string _dataDir = AppPaths.Root;
 
-    private static readonly string _settingsPath = Path.Combine(_dataDir, "settings.json");
+    private static readonly string _settingsPath = AppPaths.SettingsFile;
 
     private static AppSettingsData? _cached;
 
