@@ -36,6 +36,7 @@ class ScreenshotToolbar : Control
     public event Action<Color>? ColorChanged;
     public event Action<float>? ThicknessChanged;
     public event Action<float>? FontSizeChanged;
+    public event Action? BorderToggled;
 
     public ScreenshotToolbar()
     {
@@ -78,6 +79,10 @@ class ScreenshotToolbar : Control
         AddButton("forward", "\u2B06", "Bring Forward", () => BringForwardRequested?.Invoke());
         AddButton("backward", "\u2B07", "Send Backward", () => SendBackwardRequested?.Invoke());
         AddButton("delete", "\u2716", "Delete (Del)", () => DeleteRequested?.Invoke());
+        AddSeparator();
+
+        // Border (opens popup)
+        AddButton("border", "\u25A3", "Border Settings (B)", () => BorderToggled?.Invoke());
         AddSeparator();
 
         // Color palette (compact)
@@ -303,6 +308,7 @@ class ScreenshotToolbar : Control
         public override void Render(Graphics g, Rectangle rect, bool hover, EditorSession? session)
         {
             bool isActive = session != null && ToolMap.TryGetValue(Id, out var tool) && session.CurrentTool == tool;
+            if (Id == "border" && session != null) isActive = session.BorderEnabled;
 
             if (isActive)
             {

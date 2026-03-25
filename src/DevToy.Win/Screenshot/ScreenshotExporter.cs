@@ -9,11 +9,20 @@ static class ScreenshotExporter
     /// <summary>Flatten original image + all annotations into a final bitmap.</summary>
     public static Bitmap Flatten(EditorSession session)
     {
-        var original = session.OriginalImage;
-        var result = new Bitmap(original.Width, original.Height, PixelFormat.Format32bppArgb);
+        var canvasSize = session.CanvasSize;
+        var imgOffset = session.ImageOffset;
+        var result = new Bitmap(canvasSize.Width, canvasSize.Height, PixelFormat.Format32bppArgb);
         using var g = Graphics.FromImage(result);
 
-        g.DrawImage(original, 0, 0);
+        // White/transparent background for expanded areas
+        g.Clear(Color.White);
+
+        // Draw original image at its offset
+        g.DrawImage(session.OriginalImage, imgOffset.X, imgOffset.Y);
+
+        // Render border if enabled
+        if (session.BorderEnabled)
+            RenderBorder(g, canvasSize, session);
 
         // Render annotations in z-order (list order = z-order)
         foreach (var obj in session.Annotations)
@@ -53,6 +62,45 @@ static class ScreenshotExporter
         catch (Exception ex)
         {
             Debug.WriteLine($"Clipboard copy failed: {ex.Message}");
+        }
+    }
+
+    private static void RenderBorder(Graphics g, Size canvasSize, EditorSession session)
+    {
+        float t = session.BorderThickness;
+        float half = t / 2;
+        using var pen = new Pen(session.BorderColor, t);
+        var rect = new RectangleF(half, half, canvasSize.Width - t, canvasSize.Height - t);
+
+        switch (session.BorderStyle)
+        {
+            case CanvasBorderStyle.Solid:
+                g.DrawRectangle(pen, rect.X, rect.Y, rect.Width, rect.Height);
+                break;
+            case CanvasBorderStyle.Dashed:
+                pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
+                pen.DashPattern = new float[] { 8f, 4f };
+                g.DrawRectangle(pen, rect.X, rect.Y, rect.Width, rect.Height);
+                break;
+            case CanvasBorderStyle.Dotted:
+                pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dot;
+                g.DrawRectangle(pen, rect.X, rect.Y, rect.Width, rect.Height);
+                break;
+            case CanvasBorderStyle.Double:
+                pen.Width = Math.Max(1f, t / 3);
+                float gap = t / 2;
+                g.DrawRectangle(pen, half, half, canvasSize.Width - t, canvasSize.Height - t);
+                g.DrawRectangle(pen, half + gap, half + gap, canvasSize.Width - t - gap * 2, canvasSize.Height - t - gap * 2);
+                break;
+            case CanvasBorderStyle.Shadow:
+                g.DrawRectangle(pen, rect.X, rect.Y, rect.Width, rect.Height);
+                float sh = Math.Max(2f, t);
+                using (var shadowBrush = new SolidBrush(Color.FromArgb(80, 0, 0, 0)))
+                {
+                    g.FillRectangle(shadowBrush, rect.Right, rect.Y + sh, sh, rect.Height);
+                    g.FillRectangle(shadowBrush, rect.X + sh, rect.Bottom, rect.Width, sh);
+                }
+                break;
         }
     }
 

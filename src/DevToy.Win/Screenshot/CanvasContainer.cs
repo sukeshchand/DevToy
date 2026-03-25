@@ -5,7 +5,8 @@ namespace DevToy;
 
 /// <summary>
 /// Hosts the ScreenshotCanvas as a fixed-size child, centers it, and provides
-/// resize handles on the canvas edges that the user can drag to expand/shrink the canvas.
+/// resize handles on the canvas edges. During drag only a preview frame is shown;
+/// the actual resize is applied on mouse release.
 /// </summary>
 class CanvasContainer : Panel
 {
@@ -13,10 +14,12 @@ class CanvasContainer : Panel
     private const int HandleSize = 8;
     private const int HandleHitZone = 10;
 
+    // Resize state
     private bool _isResizingCanvas;
     private HandlePosition _resizeHandle;
     private Point _resizeStart;
-    private Size _canvasSizeAtStart;
+    private Rectangle _canvasBoundsAtStart;
+    private Rectangle _previewRect;
 
     public CanvasContainer(ScreenshotCanvas canvas)
     {
@@ -65,26 +68,45 @@ class CanvasContainer : Panel
         using var borderPen = new Pen(Color.FromArgb(100, 128, 128, 128), 1f);
         g.DrawRectangle(borderPen, cr.X - 1, cr.Y - 1, cr.Width + 1, cr.Height + 1);
 
-        // Draw resize handles
-        DrawResizeHandles(g, cr);
+        // Draw resize handles (on the actual canvas, not the preview)
+        if (!_isResizingCanvas)
+        {
+            DrawResizeHandles(g, cr);
+        }
+
+        // Draw preview frame during drag
+        if (_isResizingCanvas)
+        {
+            using var previewPen = new Pen(Color.FromArgb(180, 80, 160, 255), 1.5f);
+            previewPen.DashStyle = DashStyle.Dash;
+            previewPen.DashPattern = new float[] { 6f, 4f };
+            g.DrawRectangle(previewPen, _previewRect);
+
+            // Size label on preview
+            string sizeText = $"{_previewRect.Width} x {_previewRect.Height}";
+            using var font = new Font("Segoe UI", 9f);
+            var textSize = g.MeasureString(sizeText, font);
+            float lx = _previewRect.Right - textSize.Width - 4;
+            float ly = _previewRect.Bottom + 4;
+            using var labelBg = new SolidBrush(Color.FromArgb(200, 0, 0, 0));
+            g.FillRectangle(labelBg, lx - 4, ly - 1, textSize.Width + 8, textSize.Height + 2);
+            using var labelBrush = new SolidBrush(Color.FromArgb(200, 80, 160, 255));
+            g.DrawString(sizeText, font, labelBrush, lx, ly);
+
+            // Also draw handles on the preview rect
+            DrawResizeHandles(g, _previewRect);
+        }
     }
 
-    private void DrawResizeHandles(Graphics g, Rectangle canvasRect)
+    private void DrawResizeHandles(Graphics g, Rectangle rect)
     {
         using var brush = new SolidBrush(Color.FromArgb(200, 80, 160, 255));
-        int hs = HandleSize;
-        int hh = hs / 2;
-
-        float cx = canvasRect.X + canvasRect.Width / 2f;
-        float cy = canvasRect.Y + canvasRect.Height / 2f;
-
-        // 8 handles: corners + edge midpoints
-        var handles = GetHandleRects(canvasRect);
+        var handles = GetHandleRects(rect);
         foreach (var r in handles)
             g.FillRectangle(brush, r);
     }
 
-    private RectangleF[] GetHandleRects(Rectangle cr)
+    private static RectangleF[] GetHandleRects(Rectangle cr)
     {
         int hs = HandleSize;
         int hh = hs / 2;
@@ -93,14 +115,14 @@ class CanvasContainer : Panel
 
         return new RectangleF[]
         {
-            new(cr.Left - hh, cr.Top - hh, hs, hs),           // TopLeft
-            new(cx - hh, cr.Top - hh, hs, hs),                // TopCenter
-            new(cr.Right - hh, cr.Top - hh, hs, hs),          // TopRight
-            new(cr.Left - hh, cy - hh, hs, hs),               // MiddleLeft
-            new(cr.Right - hh, cy - hh, hs, hs),              // MiddleRight
-            new(cr.Left - hh, cr.Bottom - hh, hs, hs),        // BottomLeft
-            new(cx - hh, cr.Bottom - hh, hs, hs),             // BottomCenter
-            new(cr.Right - hh, cr.Bottom - hh, hs, hs),       // BottomRight
+            new(cr.Left - hh, cr.Top - hh, hs, hs),
+            new(cx - hh, cr.Top - hh, hs, hs),
+            new(cr.Right - hh, cr.Top - hh, hs, hs),
+            new(cr.Left - hh, cy - hh, hs, hs),
+            new(cr.Right - hh, cy - hh, hs, hs),
+            new(cr.Left - hh, cr.Bottom - hh, hs, hs),
+            new(cx - hh, cr.Bottom - hh, hs, hs),
+            new(cr.Right - hh, cr.Bottom - hh, hs, hs),
         };
     }
 
@@ -134,8 +156,10 @@ class CanvasContainer : Panel
             _isResizingCanvas = true;
             _resizeHandle = handle;
             _resizeStart = e.Location;
-            _canvasSizeAtStart = _canvas.Size;
+            _canvasBoundsAtStart = _canvas.Bounds;
+            _previewRect = _canvas.Bounds;
             Capture = true;
+            Invalidate();
             return;
         }
 
@@ -149,35 +173,28 @@ class CanvasContainer : Panel
             int dx = e.X - _resizeStart.X;
             int dy = e.Y - _resizeStart.Y;
 
-            int newW = _canvasSizeAtStart.Width;
-            int newH = _canvasSizeAtStart.Height;
+            // Compute the preview rect by adjusting the appropriate edges
+            var r = _canvasBoundsAtStart;
+            int left = r.Left, top = r.Top, right = r.Right, bottom = r.Bottom;
 
             switch (_resizeHandle)
             {
-                case HandlePosition.TopLeft:
-                    newW -= dx; newH -= dy; break;
-                case HandlePosition.TopCenter:
-                    newH -= dy; break;
-                case HandlePosition.TopRight:
-                    newW += dx; newH -= dy; break;
-                case HandlePosition.MiddleLeft:
-                    newW -= dx; break;
-                case HandlePosition.MiddleRight:
-                    newW += dx; break;
-                case HandlePosition.BottomLeft:
-                    newW -= dx; newH += dy; break;
-                case HandlePosition.BottomCenter:
-                    newH += dy; break;
-                case HandlePosition.BottomRight:
-                    newW += dx; newH += dy; break;
+                case HandlePosition.TopLeft:     left += dx; top += dy; break;
+                case HandlePosition.TopCenter:   top += dy; break;
+                case HandlePosition.TopRight:    right += dx; top += dy; break;
+                case HandlePosition.MiddleLeft:  left += dx; break;
+                case HandlePosition.MiddleRight: right += dx; break;
+                case HandlePosition.BottomLeft:  left += dx; bottom += dy; break;
+                case HandlePosition.BottomCenter: bottom += dy; break;
+                case HandlePosition.BottomRight: right += dx; bottom += dy; break;
             }
 
-            // Enforce minimum canvas size
-            newW = Math.Max(50, newW);
-            newH = Math.Max(50, newH);
+            // Enforce minimum size
+            if (right - left < 50) { if (left != _canvasBoundsAtStart.Left) left = right - 50; else right = left + 50; }
+            if (bottom - top < 50) { if (top != _canvasBoundsAtStart.Top) top = bottom - 50; else bottom = top + 50; }
 
-            _canvas.Size = new Size(newW, newH);
-            CenterCanvas();
+            _previewRect = Rectangle.FromLTRB(left, top, right, bottom);
+            Invalidate();
             return;
         }
 
@@ -201,7 +218,37 @@ class CanvasContainer : Panel
         {
             _isResizingCanvas = false;
             Capture = false;
-            Invalidate();
+
+            // Calculate how much each edge moved relative to the original canvas bounds
+            var oldBounds = _canvasBoundsAtStart;
+            var newBounds = _previewRect;
+
+            int leftDelta = oldBounds.Left - newBounds.Left;   // positive = expanded left
+            int topDelta = oldBounds.Top - newBounds.Top;      // positive = expanded top
+            int newW = newBounds.Width;
+            int newH = newBounds.Height;
+
+            // Update session: shift image offset for left/top expansion
+            if (_canvas.Session != null)
+            {
+                var session = _canvas.Session;
+                var currentOffset = session.ImageOffset;
+                session.ImageOffset = new Point(
+                    currentOffset.X + leftDelta,
+                    currentOffset.Y + topDelta);
+                session.CanvasSize = new Size(newW, newH);
+
+                // Also shift all existing annotations by the same amount
+                if (leftDelta != 0 || topDelta != 0)
+                {
+                    foreach (var obj in session.Annotations)
+                        obj.Move(leftDelta, topDelta);
+                }
+            }
+
+            // Apply the new canvas size
+            _canvas.Size = new Size(newW, newH);
+            CenterCanvas();
             return;
         }
 

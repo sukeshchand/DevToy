@@ -60,8 +60,13 @@ class ScreenshotCanvas : Control
 
         if (_session == null) return;
 
-        // Draw the original image at 0,0 — canvas size matches image
-        g.DrawImage(_session.OriginalImage, 0, 0);
+        // Draw the original image at its offset (shifts when canvas expands left/top)
+        var imgOff = _session.ImageOffset;
+        g.DrawImage(_session.OriginalImage, imgOff.X, imgOff.Y);
+
+        // Draw border if enabled
+        if (_session.BorderEnabled)
+            RenderBorder(g);
 
         // Draw all annotations in order (list order = z-order)
         foreach (var obj in _session.Annotations)
@@ -75,6 +80,49 @@ class ScreenshotCanvas : Control
         if (_isDrawing && _drawingObject != null)
         {
             _drawingObject.Render(g);
+        }
+    }
+
+    private void RenderBorder(Graphics g)
+    {
+        if (_session == null) return;
+        float t = _session.BorderThickness;
+        float half = t / 2;
+        var rect = new RectangleF(half, half, ClientSize.Width - t, ClientSize.Height - t);
+
+        using var pen = new Pen(_session.BorderColor, t);
+        switch (_session.BorderStyle)
+        {
+            case CanvasBorderStyle.Solid:
+                pen.DashStyle = DashStyle.Solid;
+                g.DrawRectangle(pen, rect.X, rect.Y, rect.Width, rect.Height);
+                break;
+            case CanvasBorderStyle.Dashed:
+                pen.DashStyle = DashStyle.Dash;
+                pen.DashPattern = new float[] { 8f, 4f };
+                g.DrawRectangle(pen, rect.X, rect.Y, rect.Width, rect.Height);
+                break;
+            case CanvasBorderStyle.Dotted:
+                pen.DashStyle = DashStyle.Dot;
+                g.DrawRectangle(pen, rect.X, rect.Y, rect.Width, rect.Height);
+                break;
+            case CanvasBorderStyle.Double:
+                pen.Width = Math.Max(1f, t / 3);
+                float gap = t / 2;
+                g.DrawRectangle(pen, half, half, ClientSize.Width - t, ClientSize.Height - t);
+                g.DrawRectangle(pen, half + gap, half + gap, ClientSize.Width - t - gap * 2, ClientSize.Height - t - gap * 2);
+                break;
+            case CanvasBorderStyle.Shadow:
+                pen.DashStyle = DashStyle.Solid;
+                g.DrawRectangle(pen, rect.X, rect.Y, rect.Width, rect.Height);
+                // Shadow offset
+                float sh = Math.Max(2f, t);
+                using (var shadowBrush = new SolidBrush(Color.FromArgb(80, 0, 0, 0)))
+                {
+                    g.FillRectangle(shadowBrush, rect.Right, rect.Y + sh, sh, rect.Height);
+                    g.FillRectangle(shadowBrush, rect.X + sh, rect.Bottom, rect.Width, sh);
+                }
+                break;
         }
     }
 

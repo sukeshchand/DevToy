@@ -37,8 +37,8 @@ class ScreenshotEditorForm : Form
         BackColor = _theme.BgDark;
         AutoScaleMode = AutoScaleMode.Dpi;
 
-        // Size form to exactly fit the captured image + toolbar
-        int toolbarAreaHeight = 52;
+        // Size form to exactly fit the captured image + toolbar + gap
+        int toolbarAreaHeight = 60;
         int pad = 8;
         int imgW = capturedImage.Width;
         int imgH = capturedImage.Height;
@@ -153,6 +153,19 @@ class ScreenshotEditorForm : Form
             }
         };
 
+        _toolbar.BorderToggled += () =>
+        {
+            // Show border popup below the toolbar
+            var screenPt = _toolbar.PointToScreen(new Point(_toolbar.Width / 2 - 110, _toolbar.Height));
+            var popup = new BorderPopup(_session, screenPt);
+            popup.SettingsChanged += () =>
+            {
+                _canvas.Invalidate();
+                _toolbar.Invalidate();
+            };
+            popup.Show(this);
+        };
+
         _toolbar.SaveRequested += DoSave;
         _toolbar.SaveAsRequested += DoSaveAs;
         _toolbar.CopyRequested += DoCopy;
@@ -186,6 +199,15 @@ class ScreenshotEditorForm : Form
             };
             if (e.KeyCode == Keys.T && _session.Annotations.All(a => a is not TextObject { IsEditing: true }))
                 tool = AnnotationTool.Text;
+
+            if (e.KeyCode == Keys.B)
+            {
+                _session.BorderEnabled = !_session.BorderEnabled;
+                _canvas.Invalidate();
+                _toolbar.Invalidate();
+                e.Handled = true;
+                return;
+            }
 
             if (tool != null)
             {

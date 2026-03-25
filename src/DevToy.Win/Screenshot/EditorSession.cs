@@ -13,9 +13,25 @@ class EditorSession
     public float CurrentFontSize { get; set; } = 16f;
     public AnnotationObject? SelectedObject { get; set; }
 
+    /// <summary>
+    /// Offset where the original image is drawn within the canvas.
+    /// When canvas expands left/top, this increases so the image stays in place.
+    /// </summary>
+    public Point ImageOffset { get; set; } = Point.Empty;
+
+    /// <summary>Current canvas size (may be larger than OriginalImage).</summary>
+    public Size CanvasSize { get; set; }
+
+    // Border settings
+    public bool BorderEnabled { get; set; }
+    public CanvasBorderStyle BorderStyle { get; set; } = CanvasBorderStyle.Solid;
+    public Color BorderColor { get; set; } = Color.FromArgb(60, 60, 60);
+    public float BorderThickness { get; set; } = 2f;
+
     public EditorSession(Bitmap image, int maxUndo = 30)
     {
         OriginalImage = image;
+        CanvasSize = image.Size;
         UndoRedo = new UndoRedoManager(maxUndo);
     }
 
@@ -90,4 +106,13 @@ class EditorSession
             if (obj is TextObject txt) txt.IsEditing = false;
         }
     }
+}
+
+enum CanvasBorderStyle
+{
+    Solid,
+    Dashed,
+    Dotted,
+    Double,
+    Shadow,
 }
