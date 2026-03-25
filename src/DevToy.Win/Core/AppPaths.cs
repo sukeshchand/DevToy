@@ -22,6 +22,9 @@ static class AppPaths
     /// <summary>Claude chat history: Root\history\claude\chats\</summary>
     public static string ClaudeChatHistoryDir { get; } = Path.Combine(Root, "history", "claude", "chats");
 
+    /// <summary>Screenshots directory: Root\screenshots\</summary>
+    public static string ScreenshotsDir { get; } = Path.Combine(Root, "screenshots");
+
     /// <summary>Scripts directory: Root\scripts\</summary>
     public static string ScriptsDir { get; } = Path.Combine(Root, "scripts");
 

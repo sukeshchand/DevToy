@@ -1,0 +1,489 @@
+using System.Drawing;
+using System.Drawing.Drawing2D;
+
+namespace DevToy;
+
+class ScreenshotToolbar : Control
+{
+    // Layout constants
+    private const int BtnSize = 32;
+    private const int BtnPad = 2;
+    private const int SepWidth = 8;
+    private const int BarPad = 6;
+
+    private readonly List<ToolbarItem> _items = new();
+    private int _hoverIndex = -1;
+    private EditorSession? _session;
+
+    // Color picker state
+    private static readonly Color[] Palette = new[]
+    {
+        Color.Red, Color.FromArgb(255, 100, 0), Color.Yellow, Color.Lime,
+        Color.Cyan, Color.DodgerBlue, Color.FromArgb(160, 32, 240), Color.Magenta,
+        Color.White, Color.Black, Color.FromArgb(128, 128, 128),
+    };
+
+    public event Action<AnnotationTool>? ToolSelected;
+    public event Action? UndoRequested;
+    public event Action? RedoRequested;
+    public event Action? DeleteRequested;
+    public event Action? BringForwardRequested;
+    public event Action? SendBackwardRequested;
+    public event Action? SaveRequested;
+    public event Action? SaveAsRequested;
+    public event Action? CopyRequested;
+    public event Action? CancelRequested;
+    public event Action<Color>? ColorChanged;
+    public event Action<float>? ThicknessChanged;
+    public event Action<float>? FontSizeChanged;
+
+    public ScreenshotToolbar()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        BackColor = Color.FromArgb(40, 40, 40);
+        Height = BtnSize + BarPad * 2;
+
+        BuildItems();
+        Width = CalculateWidth();
+    }
+
+    public EditorSession? Session
+    {
+        get => _session;
+        set { _session = value; Invalidate(); }
+    }
+
+    private void BuildItems()
+    {
+        _items.Clear();
+
+        // Tools
+        AddButton("select", "\u2B9F", "Select (V)", () => ToolSelected?.Invoke(AnnotationTool.Select));
+        AddButton("pen", "\u270E", "Pen (P)", () => ToolSelected?.Invoke(AnnotationTool.Pen));
+        AddButton("marker", "\uFF2D", "Marker (M)", () => ToolSelected?.Invoke(AnnotationTool.Marker));
+        AddSeparator();
+        AddButton("line", "\u2571", "Line (L)", () => ToolSelected?.Invoke(AnnotationTool.Line));
+        AddButton("arrow", "\u2197", "Arrow (A)", () => ToolSelected?.Invoke(AnnotationTool.Arrow));
+        AddButton("rect", "\u25A1", "Rectangle (R)", () => ToolSelected?.Invoke(AnnotationTool.Rectangle));
+        AddButton("ellipse", "\u25CB", "Ellipse (E)", () => ToolSelected?.Invoke(AnnotationTool.Ellipse));
+        AddButton("text", "T", "Text (T)", () => ToolSelected?.Invoke(AnnotationTool.Text));
+        AddSeparator();
+
+        // Undo/Redo
+        AddButton("undo", "\u21B6", "Undo (Ctrl+Z)", () => UndoRequested?.Invoke());
+        AddButton("redo", "\u21B7", "Redo (Ctrl+Y)", () => RedoRequested?.Invoke());
+        AddSeparator();
+
+        // Layer controls
+        AddButton("forward", "\u2B06", "Bring Forward", () => BringForwardRequested?.Invoke());
+        AddButton("backward", "\u2B07", "Send Backward", () => SendBackwardRequested?.Invoke());
+        AddButton("delete", "\u2716", "Delete (Del)", () => DeleteRequested?.Invoke());
+        AddSeparator();
+
+        // Color palette (compact)
+        AddColorPicker();
+        AddSeparator();
+
+        // Thickness
+        AddThicknessSelector();
+        AddSeparator();
+
+        // Font size (only relevant for text tool)
+        AddFontSizeSelector();
+        AddSeparator();
+
+        // Actions
+        AddButton("save", "\uD83D\uDCBE", "Save (Ctrl+S)", () => SaveRequested?.Invoke());
+        AddButton("saveas", "\uD83D\uDCC2", "Save As (Ctrl+Shift+S)", () => SaveAsRequested?.Invoke());
+        AddButton("copy", "\uD83D\uDCCB", "Copy (Ctrl+C)", () => CopyRequested?.Invoke());
+        AddSeparator();
+        AddButton("cancel", "\u2715", "Close (Esc)", () => CancelRequested?.Invoke());
+
+        Width = CalculateWidth();
+    }
+
+    private void AddButton(string id, string icon, string tooltip, Action onClick)
+    {
+        _items.Add(new ToolbarButton(id, icon, tooltip, onClick));
+    }
+
+    private void AddSeparator()
+    {
+        _items.Add(new ToolbarSeparator());
+    }
+
+    private void AddColorPicker()
+    {
+        _items.Add(new ToolbarColorPicker(Palette, color =>
+        {
+            ColorChanged?.Invoke(color);
+            Invalidate();
+        }));
+    }
+
+    private void AddThicknessSelector()
+    {
+        _items.Add(new ToolbarThicknessSelector(thickness =>
+        {
+            ThicknessChanged?.Invoke(thickness);
+            Invalidate();
+        }));
+    }
+
+    private void AddFontSizeSelector()
+    {
+        _items.Add(new ToolbarFontSizeSelector(size =>
+        {
+            FontSizeChanged?.Invoke(size);
+            Invalidate();
+        }));
+    }
+
+    private int CalculateWidth()
+    {
+        int w = BarPad;
+        foreach (var item in _items)
+            w += item.GetWidth() + BtnPad;
+        return w + BarPad;
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+        // Background with rounded corners
+        using var bgBrush = new SolidBrush(Color.FromArgb(230, 35, 35, 40));
+        using var bgPath = RoundedRect(new RectangleF(0, 0, Width, Height), 8);
+        g.FillPath(bgBrush, bgPath);
+
+        // Border
+        using var borderPen = new Pen(Color.FromArgb(80, 100, 100, 120), 1f);
+        g.DrawPath(borderPen, bgPath);
+
+        int x = BarPad;
+        for (int i = 0; i < _items.Count; i++)
+        {
+            var item = _items[i];
+            var rect = new Rectangle(x, BarPad, item.GetWidth(), BtnSize);
+            item.Render(g, rect, i == _hoverIndex, _session);
+            x += item.GetWidth() + BtnPad;
+        }
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        int idx = HitTestItem(e.Location);
+        if (idx != _hoverIndex)
+        {
+            _hoverIndex = idx;
+            Invalidate();
+
+            // Tooltip
+            if (idx >= 0 && _items[idx] is ToolbarButton btn)
+            {
+                var tt = GetOrCreateTooltip();
+                tt.SetToolTip(this, btn.Tooltip);
+            }
+        }
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        _hoverIndex = -1;
+        Invalidate();
+    }
+
+    protected override void OnMouseClick(MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left) return;
+        int idx = HitTestItem(e.Location);
+        if (idx >= 0)
+        {
+            var rect = GetItemRect(idx);
+            _items[idx].HandleClick(e.Location, rect, _session);
+            Invalidate();
+        }
+    }
+
+    private int HitTestItem(Point pt)
+    {
+        int x = BarPad;
+        for (int i = 0; i < _items.Count; i++)
+        {
+            var item = _items[i];
+            var rect = new Rectangle(x, BarPad, item.GetWidth(), BtnSize);
+            if (rect.Contains(pt)) return i;
+            x += item.GetWidth() + BtnPad;
+        }
+        return -1;
+    }
+
+    private Rectangle GetItemRect(int index)
+    {
+        int x = BarPad;
+        for (int i = 0; i < _items.Count; i++)
+        {
+            var rect = new Rectangle(x, BarPad, _items[i].GetWidth(), BtnSize);
+            if (i == index) return rect;
+            x += _items[i].GetWidth() + BtnPad;
+        }
+        return Rectangle.Empty;
+    }
+
+    private ToolTip? _tooltip;
+    private ToolTip GetOrCreateTooltip()
+    {
+        _tooltip ??= new ToolTip { InitialDelay = 400, ReshowDelay = 200 };
+        return _tooltip;
+    }
+
+    private static GraphicsPath RoundedRect(RectangleF rect, float radius)
+    {
+        var path = new GraphicsPath();
+        float d = radius * 2;
+        path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+        path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
+        path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
+        path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
+    // --- Toolbar item types ---
+
+    abstract class ToolbarItem
+    {
+        public abstract int GetWidth();
+        public abstract void Render(Graphics g, Rectangle rect, bool hover, EditorSession? session);
+        public virtual void HandleClick(Point pt, Rectangle rect, EditorSession? session) { }
+    }
+
+    class ToolbarSeparator : ToolbarItem
+    {
+        public override int GetWidth() => SepWidth;
+        public override void Render(Graphics g, Rectangle rect, bool hover, EditorSession? session)
+        {
+            int cx = rect.X + rect.Width / 2;
+            using var pen = new Pen(Color.FromArgb(60, 128, 128, 128), 1f);
+            g.DrawLine(pen, cx, rect.Y + 6, cx, rect.Bottom - 6);
+        }
+    }
+
+    class ToolbarButton : ToolbarItem
+    {
+        public string Id { get; }
+        public string Icon { get; }
+        public string Tooltip { get; }
+        private readonly Action _onClick;
+
+        private static readonly Dictionary<string, AnnotationTool> ToolMap = new()
+        {
+            ["select"] = AnnotationTool.Select,
+            ["pen"] = AnnotationTool.Pen,
+            ["marker"] = AnnotationTool.Marker,
+            ["line"] = AnnotationTool.Line,
+            ["arrow"] = AnnotationTool.Arrow,
+            ["rect"] = AnnotationTool.Rectangle,
+            ["ellipse"] = AnnotationTool.Ellipse,
+            ["text"] = AnnotationTool.Text,
+        };
+
+        public ToolbarButton(string id, string icon, string tooltip, Action onClick)
+        {
+            Id = id;
+            Icon = icon;
+            Tooltip = tooltip;
+            _onClick = onClick;
+        }
+
+        public override int GetWidth() => BtnSize;
+
+        public override void Render(Graphics g, Rectangle rect, bool hover, EditorSession? session)
+        {
+            bool isActive = session != null && ToolMap.TryGetValue(Id, out var tool) && session.CurrentTool == tool;
+
+            if (isActive)
+            {
+                using var activeBrush = new SolidBrush(Color.FromArgb(60, 80, 160, 255));
+                using var activePath = RoundedRectF(new RectangleF(rect.X, rect.Y, rect.Width, rect.Height), 4);
+                g.FillPath(activeBrush, activePath);
+                using var activeBorder = new Pen(Color.FromArgb(120, 80, 160, 255), 1f);
+                g.DrawPath(activeBorder, activePath);
+            }
+            else if (hover)
+            {
+                using var hoverBrush = new SolidBrush(Color.FromArgb(40, 255, 255, 255));
+                using var hoverPath = RoundedRectF(new RectangleF(rect.X, rect.Y, rect.Width, rect.Height), 4);
+                g.FillPath(hoverBrush, hoverPath);
+            }
+
+            // Special coloring
+            Color textColor = Id switch
+            {
+                "cancel" => Color.FromArgb(200, 255, 80, 80),
+                "delete" => Color.FromArgb(200, 255, 80, 80),
+                "save" or "copy" => Color.FromArgb(200, 80, 200, 120),
+                _ => Color.FromArgb(200, 220, 220, 230),
+            };
+
+            using var font = new Font("Segoe UI", Id == "text" ? 13f : 11f, Id == "text" ? FontStyle.Bold : FontStyle.Regular);
+            using var brush = new SolidBrush(textColor);
+            using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            g.DrawString(Icon, font, brush, rect, sf);
+        }
+
+        public override void HandleClick(Point pt, Rectangle rect, EditorSession? session) => _onClick();
+
+        private static GraphicsPath RoundedRectF(RectangleF r, float rad)
+        {
+            var path = new GraphicsPath();
+            float d = rad * 2;
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+    }
+
+    class ToolbarColorPicker : ToolbarItem
+    {
+        private readonly Color[] _colors;
+        private readonly Action<Color> _onPick;
+        private const int SwatchSize = 14;
+        private const int Cols = 6;
+
+        public ToolbarColorPicker(Color[] colors, Action<Color> onPick)
+        {
+            _colors = colors;
+            _onPick = onPick;
+        }
+
+        public override int GetWidth()
+        {
+            int cols = Math.Min(Cols, _colors.Length);
+            return cols * (SwatchSize + 1) + 2;
+        }
+
+        public override void Render(Graphics g, Rectangle rect, bool hover, EditorSession? session)
+        {
+            int x = rect.X + 1;
+            int y = rect.Y + 2;
+            for (int i = 0; i < _colors.Length; i++)
+            {
+                int col = i % Cols;
+                int row = i / Cols;
+                var sr = new Rectangle(x + col * (SwatchSize + 1), y + row * (SwatchSize + 1), SwatchSize, SwatchSize);
+                using var brush = new SolidBrush(_colors[i]);
+                g.FillRectangle(brush, sr);
+
+                if (session != null && _colors[i].ToArgb() == session.CurrentColor.ToArgb())
+                {
+                    using var selPen = new Pen(Color.White, 1.5f);
+                    g.DrawRectangle(selPen, sr.X - 1, sr.Y - 1, sr.Width + 1, sr.Height + 1);
+                }
+            }
+        }
+
+        public override void HandleClick(Point pt, Rectangle rect, EditorSession? session)
+        {
+            int x = rect.X + 1;
+            int y = rect.Y + 2;
+            for (int i = 0; i < _colors.Length; i++)
+            {
+                int col = i % Cols;
+                int row = i / Cols;
+                var sr = new Rectangle(x + col * (SwatchSize + 1), y + row * (SwatchSize + 1), SwatchSize, SwatchSize);
+                if (sr.Contains(pt))
+                {
+                    _onPick(_colors[i]);
+                    return;
+                }
+            }
+        }
+    }
+
+    class ToolbarThicknessSelector : ToolbarItem
+    {
+        private readonly float[] _sizes = { 1f, 2f, 3f, 5f, 8f };
+        private readonly Action<float> _onPick;
+
+        public ToolbarThicknessSelector(Action<float> onPick) => _onPick = onPick;
+
+        public override int GetWidth() => _sizes.Length * 14 + 4;
+
+        public override void Render(Graphics g, Rectangle rect, bool hover, EditorSession? session)
+        {
+            int x = rect.X + 2;
+            float currentThickness = session?.CurrentThickness ?? 2f;
+            for (int i = 0; i < _sizes.Length; i++)
+            {
+                int cx = x + i * 14 + 7;
+                int cy = rect.Y + rect.Height / 2;
+                int r = Math.Max(2, (int)(_sizes[i] * 1.2f));
+                bool active = Math.Abs(_sizes[i] - currentThickness) < 0.1f;
+
+                using var brush = new SolidBrush(active ? Color.FromArgb(200, 80, 160, 255) : Color.FromArgb(160, 200, 200, 210));
+                g.FillEllipse(brush, cx - r, cy - r, r * 2, r * 2);
+            }
+        }
+
+        public override void HandleClick(Point pt, Rectangle rect, EditorSession? session)
+        {
+            int x = rect.X + 2;
+            for (int i = 0; i < _sizes.Length; i++)
+            {
+                var hitRect = new Rectangle(x + i * 14, rect.Y, 14, rect.Height);
+                if (hitRect.Contains(pt))
+                {
+                    _onPick(_sizes[i]);
+                    return;
+                }
+            }
+        }
+    }
+
+    class ToolbarFontSizeSelector : ToolbarItem
+    {
+        private readonly float[] _sizes = { 12f, 16f, 24f, 36f };
+        private readonly Action<float> _onPick;
+
+        public ToolbarFontSizeSelector(Action<float> onPick) => _onPick = onPick;
+
+        public override int GetWidth() => _sizes.Length * 20 + 4;
+
+        public override void Render(Graphics g, Rectangle rect, bool hover, EditorSession? session)
+        {
+            int x = rect.X + 2;
+            float currentSize = session?.CurrentFontSize ?? 16f;
+            for (int i = 0; i < _sizes.Length; i++)
+            {
+                bool active = Math.Abs(_sizes[i] - currentSize) < 0.1f;
+                var itemRect = new Rectangle(x + i * 20, rect.Y, 20, rect.Height);
+                var textColor = active ? Color.FromArgb(200, 80, 160, 255) : Color.FromArgb(140, 200, 200, 210);
+                float fs = 6f + _sizes[i] / 8f;
+                using var font = new Font("Segoe UI", Math.Min(fs, 11f), FontStyle.Bold);
+                using var brush = new SolidBrush(textColor);
+                using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                g.DrawString("A", font, brush, itemRect, sf);
+            }
+        }
+
+        public override void HandleClick(Point pt, Rectangle rect, EditorSession? session)
+        {
+            int x = rect.X + 2;
+            for (int i = 0; i < _sizes.Length; i++)
+            {
+                var hitRect = new Rectangle(x + i * 20, rect.Y, 20, rect.Height);
+                if (hitRect.Contains(pt))
+                {
+                    _onPick(_sizes[i]);
+                    return;
+                }
+            }
+        }
+    }
+}

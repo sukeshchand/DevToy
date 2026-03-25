@@ -51,10 +51,44 @@ class PopupAppContext : ApplicationContext
         var menu = new ContextMenuStrip();
         menu.Items.Add("Show Last Notification", null, (_, _) => _popupForm.BringToForeground());
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Take Screenshot", null, (_, _) => TakeScreenshot());
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Settings...", null, (_, _) => ShowSettingsForm());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitApp());
         return menu;
+    }
+
+    private void TakeScreenshot()
+    {
+        var overlay = new ScreenshotOverlay();
+        overlay.RegionCaptured += bitmap =>
+        {
+            // Open the editor instead of saving immediately
+            var editor = new ScreenshotEditorForm(bitmap);
+            editor.ImageSaved += filePath =>
+            {
+                _popupForm.Invoke(() =>
+                {
+                    _popupForm.ShowPopup(
+                        "Screenshot Saved",
+                        $"Saved to:\n`{filePath}`",
+                        NotificationType.Success);
+                });
+            };
+            editor.ImageCopied += () =>
+            {
+                _popupForm.Invoke(() =>
+                {
+                    _popupForm.ShowPopup(
+                        "Screenshot Copied",
+                        "Screenshot copied to clipboard.",
+                        NotificationType.Success);
+                });
+            };
+            editor.Show();
+        };
+        overlay.Show();
     }
 
     private void ShowSettingsForm()

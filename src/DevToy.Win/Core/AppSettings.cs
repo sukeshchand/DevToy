@@ -20,6 +20,15 @@ record AppSettingsData
 
     [JsonPropertyName("autoTitleToFolder")]
     public bool AutoTitleToFolder { get; init; } = false;
+
+    [JsonPropertyName("screenshotLastColor")]
+    public string ScreenshotLastColor { get; init; } = "Red";
+
+    [JsonPropertyName("screenshotLastThickness")]
+    public float ScreenshotLastThickness { get; init; } = 2f;
+
+    [JsonPropertyName("screenshotMaxUndo")]
+    public int ScreenshotMaxUndo { get; init; } = 30;
 }
 
 static class AppSettings
