@@ -23,6 +23,8 @@ class ScreenshotToolbar : Control
         Color.White, Color.Black, Color.FromArgb(128, 128, 128),
     };
 
+    public event Action? QuickCopyRequested;
+    public event Action? CopyPathRequested;
     public event Action<AnnotationTool>? ToolSelected;
     public event Action? UndoRequested;
     public event Action? RedoRequested;
@@ -57,6 +59,11 @@ class ScreenshotToolbar : Control
     private void BuildItems()
     {
         _items.Clear();
+
+        // Primary actions — most used, visually distinct
+        _items.Add(new ToolbarPrimaryButton("quickcopy", "\uD83D\uDCCB", "Copy", "Copy to Clipboard (Ctrl+C)", () => QuickCopyRequested?.Invoke()));
+        _items.Add(new ToolbarPrimaryButton("copypath", "\uD83D\uDCCE", "Path", "Save & Copy Path (Ctrl+Shift+C)", () => CopyPathRequested?.Invoke()));
+        AddSeparator();
 
         // Tools
         AddButton("select", "\u2B9F", "Select (V)", () => ToolSelected?.Invoke(AnnotationTool.Select));
@@ -338,6 +345,71 @@ class ScreenshotToolbar : Control
             using var brush = new SolidBrush(textColor);
             using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             g.DrawString(Icon, font, brush, rect, sf);
+        }
+
+        public override void HandleClick(Point pt, Rectangle rect, EditorSession? session) => _onClick();
+
+        private static GraphicsPath RoundedRectF(RectangleF r, float rad)
+        {
+            var path = new GraphicsPath();
+            float d = rad * 2;
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+    }
+
+    /// <summary>Primary action button — wider, filled accent background, icon + label.</summary>
+    class ToolbarPrimaryButton : ToolbarItem
+    {
+        private readonly string _id;
+        private readonly string _icon;
+        private readonly string _label;
+        public string Tooltip { get; }
+        private readonly Action _onClick;
+        private const int Width = 58;
+
+        public ToolbarPrimaryButton(string id, string icon, string label, string tooltip, Action onClick)
+        {
+            _id = id;
+            _icon = icon;
+            _label = label;
+            Tooltip = tooltip;
+            _onClick = onClick;
+        }
+
+        public override int GetWidth() => Width;
+
+        public override void Render(Graphics g, Rectangle rect, bool hover, EditorSession? session)
+        {
+            // Filled accent background
+            var bgColor = hover
+                ? Color.FromArgb(200, 60, 140, 230)
+                : Color.FromArgb(180, 45, 120, 210);
+            using var bgPath = RoundedRectF(new RectangleF(rect.X, rect.Y, rect.Width, rect.Height), 5);
+            using var bgBrush = new SolidBrush(bgColor);
+            g.FillPath(bgBrush, bgPath);
+
+            // Border glow
+            using var borderPen = new Pen(Color.FromArgb(hover ? 140 : 80, 80, 160, 255), 1f);
+            g.DrawPath(borderPen, bgPath);
+
+            // Icon + label stacked
+            using var iconFont = new Font("Segoe UI", 11f);
+            using var labelFont = new Font("Segoe UI", 7f, FontStyle.Bold);
+            using var textBrush = new SolidBrush(Color.White);
+
+            // Icon centered in top portion
+            var iconRect = new RectangleF(rect.X, rect.Y - 1, rect.Width, rect.Height * 0.62f);
+            using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            g.DrawString(_icon, iconFont, textBrush, iconRect, sf);
+
+            // Label at bottom
+            var labelRect = new RectangleF(rect.X, rect.Y + rect.Height * 0.55f, rect.Width, rect.Height * 0.45f);
+            g.DrawString(_label, labelFont, textBrush, labelRect, sf);
         }
 
         public override void HandleClick(Point pt, Rectangle rect, EditorSession? session) => _onClick();

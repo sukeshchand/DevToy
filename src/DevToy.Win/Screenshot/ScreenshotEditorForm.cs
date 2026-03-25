@@ -98,6 +98,9 @@ class ScreenshotEditorForm : Form
 
     private void WireToolbarEvents()
     {
+        _toolbar.QuickCopyRequested += DoCopy;
+        _toolbar.CopyPathRequested += DoCopyPath;
+
         _toolbar.ToolSelected += tool =>
         {
             _canvas.CommitTextEdit();
@@ -176,6 +179,7 @@ class ScreenshotEditorForm : Form
     {
         // Global keyboard shortcuts
         if (e.Control && e.Shift && e.KeyCode == Keys.S) { DoSaveAs(); e.Handled = true; return; }
+        if (e.Control && e.Shift && e.KeyCode == Keys.C) { DoCopyPath(); e.Handled = true; return; }
         if (e.Control && e.KeyCode == Keys.S) { DoSave(); e.Handled = true; return; }
         if (e.Control && e.KeyCode == Keys.C) { DoCopy(); e.Handled = true; return; }
         if (e.Control && e.KeyCode == Keys.Z) { _session.UndoRedo.Undo(); _canvas.Invalidate(); e.Handled = true; return; }
@@ -282,6 +286,29 @@ class ScreenshotEditorForm : Form
         catch (Exception ex)
         {
             Debug.WriteLine($"Copy failed: {ex.Message}");
+        }
+    }
+
+    private void DoCopyPath()
+    {
+        try
+        {
+            _canvas.CommitTextEdit();
+            string path = ScreenshotExporter.SaveToFile(_session);
+
+            // Copy the file to clipboard as a file drop (like selecting a file in Explorer and pressing Ctrl+C)
+            var fileList = new System.Collections.Specialized.StringCollection();
+            fileList.Add(path);
+            Clipboard.SetFileDropList(fileList);
+
+            ImageSaved?.Invoke(path);
+            Close();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Copy Path failed: {ex.Message}");
+            MessageBox.Show(this, $"Copy Path failed: {ex.Message}", "Error",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
