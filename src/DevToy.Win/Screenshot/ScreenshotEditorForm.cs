@@ -7,7 +7,9 @@ class ScreenshotEditorForm : Form
 {
     private readonly EditorSession _session;
     private readonly ScreenshotCanvas _canvas;
+    private readonly CanvasContainer _canvasContainer;
     private readonly ScreenshotToolbar _toolbar;
+    private readonly PopupTheme _theme;
 
     /// <summary>Fires when the user saves. Provides the saved file path.</summary>
     public event Action<string>? ImageSaved;
@@ -18,56 +20,84 @@ class ScreenshotEditorForm : Form
     public ScreenshotEditorForm(Bitmap capturedImage)
     {
         _session = new EditorSession(capturedImage);
+        _theme = Themes.LoadSaved();
 
-        Text = "DevToy - Screenshot Editor";
-        FormBorderStyle = FormBorderStyle.None;
+        // Standard window with full chrome
+        Text = "DevToy — Screenshot Editor";
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MaximizeBox = true;
+        MinimizeBox = true;
         ShowInTaskbar = true;
         TopMost = true;
         KeyPreview = true;
-        BackColor = Color.FromArgb(25, 25, 30);
+        MinimumSize = new Size(500, 350);
+        Icon = Themes.CreateAppIcon(_theme.Primary);
 
-        // Size form to fit the image with padding for toolbar
-        int toolbarHeight = 44;
-        int padding = 0;
-        int formW = Math.Max(capturedImage.Width + padding * 2, 600);
-        int formH = capturedImage.Height + toolbarHeight + padding * 2 + 8;
+        // Theme colors
+        BackColor = _theme.BgDark;
+        AutoScaleMode = AutoScaleMode.Dpi;
 
-        // Clamp to screen bounds
+        // Size form to exactly fit the captured image + toolbar
+        int toolbarAreaHeight = 52;
+        int pad = 8;
+        int imgW = capturedImage.Width;
+        int imgH = capturedImage.Height;
+
+        // Client area = image + padding around it + toolbar area
+        int clientW = Math.Max(imgW + pad * 2, 600);
+        int clientH = imgH + toolbarAreaHeight + pad * 2;
+
+        // Clamp to screen
         var screen = Screen.FromPoint(Cursor.Position).WorkingArea;
-        formW = Math.Min(formW, screen.Width);
-        formH = Math.Min(formH, screen.Height);
+        clientW = Math.Min(clientW, screen.Width - 40);
+        clientH = Math.Min(clientH, screen.Height - 40);
 
-        Size = new Size(formW, formH);
-        StartPosition = FormStartPosition.Manual;
+        ClientSize = new Size(clientW, clientH);
+        StartPosition = FormStartPosition.CenterScreen;
 
-        // Center on screen
-        Location = new Point(
-            screen.Left + (screen.Width - formW) / 2,
-            screen.Top + (screen.Height - formH) / 2);
-
-        // Canvas
-        _canvas = new ScreenshotCanvas
-        {
-            Location = new Point(
-                Math.Max(0, (formW - capturedImage.Width) / 2),
-                toolbarHeight + 8),
-            Size = new Size(
-                Math.Min(capturedImage.Width, formW),
-                Math.Min(capturedImage.Height, formH - toolbarHeight - 8)),
-            Session = _session,
-        };
-        Controls.Add(_canvas);
-
-        // Toolbar — centered at top
+        // Toolbar — centered at top, recentered on resize
         _toolbar = new ScreenshotToolbar
         {
             Session = _session,
         };
         _toolbar.Location = new Point(
-            Math.Max(4, (formW - _toolbar.Width) / 2), 4);
+            Math.Max(pad, (ClientSize.Width - _toolbar.Width) / 2), pad);
         Controls.Add(_toolbar);
 
+        // Canvas — fixed size matching the captured image
+        int canvasTop = toolbarAreaHeight;
+        _canvas = new ScreenshotCanvas
+        {
+            Size = new Size(imgW, imgH),
+            Session = _session,
+        };
+
+        // Container — fills the area below toolbar, centers the canvas, provides resize handles
+        _canvasContainer = new CanvasContainer(_canvas)
+        {
+            Location = new Point(0, canvasTop),
+            Size = new Size(ClientSize.Width, ClientSize.Height - canvasTop),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
+            BackColor = _theme.BgDark,
+        };
+        Controls.Add(_canvasContainer);
+
         // Wire toolbar events
+        WireToolbarEvents();
+
+        // Recenter toolbar on resize
+        Resize += (_, _) => CenterToolbar();
+    }
+
+    private void CenterToolbar()
+    {
+        _toolbar.Location = new Point(
+            Math.Max(8, (ClientSize.Width - _toolbar.Width) / 2),
+            _toolbar.Location.Y);
+    }
+
+    private void WireToolbarEvents()
+    {
         _toolbar.ToolSelected += tool =>
         {
             _canvas.CommitTextEdit();
@@ -127,9 +157,6 @@ class ScreenshotEditorForm : Form
         _toolbar.SaveAsRequested += DoSaveAs;
         _toolbar.CopyRequested += DoCopy;
         _toolbar.CancelRequested += DoCancel;
-
-        // Make form draggable from empty areas
-        MouseDown += OnFormDrag;
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -157,7 +184,6 @@ class ScreenshotEditorForm : Form
                 Keys.E => AnnotationTool.Ellipse,
                 _ => null,
             };
-            // T key only switches to text if we're not editing text
             if (e.KeyCode == Keys.T && _session.Annotations.All(a => a is not TextObject { IsEditing: true }))
                 tool = AnnotationTool.Text;
 
@@ -242,37 +268,9 @@ class ScreenshotEditorForm : Form
         Close();
     }
 
-    // Allow dragging the borderless form
-    private Point _dragOffset;
-    private void OnFormDrag(object? sender, MouseEventArgs e)
-    {
-        if (e.Button == MouseButtons.Left)
-        {
-            _dragOffset = e.Location;
-            MouseMove += OnFormDragMove;
-            MouseUp += OnFormDragEnd;
-        }
-    }
-    private void OnFormDragMove(object? sender, MouseEventArgs e)
-    {
-        Location = new Point(Location.X + e.X - _dragOffset.X, Location.Y + e.Y - _dragOffset.Y);
-    }
-    private void OnFormDragEnd(object? sender, MouseEventArgs e)
-    {
-        MouseMove -= OnFormDragMove;
-        MouseUp -= OnFormDragEnd;
-    }
-
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         _session.OriginalImage.Dispose();
         base.OnFormClosed(e);
-    }
-
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        // Subtle border around the form
-        using var pen = new Pen(Color.FromArgb(60, 80, 160, 255), 1f);
-        e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
     }
 }

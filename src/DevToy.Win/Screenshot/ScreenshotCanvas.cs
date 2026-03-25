@@ -53,14 +53,14 @@ class ScreenshotCanvas : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.InterpolationMode = InterpolationMode.HighQualityBicubic;
 
-        // Checkerboard background
-        using (var bgBrush = new HatchBrush(HatchStyle.LargeCheckerBoard,
-            Color.FromArgb(45, 45, 45), Color.FromArgb(35, 35, 35)))
-            g.FillRectangle(bgBrush, ClientRectangle);
+        // Checkerboard background for transparency indication
+        using (var checker = new HatchBrush(HatchStyle.LargeCheckerBoard,
+            Color.FromArgb(50, 50, 50), Color.FromArgb(40, 40, 40)))
+            g.FillRectangle(checker, ClientRectangle);
 
         if (_session == null) return;
 
-        // Draw the original image
+        // Draw the original image at 0,0 — canvas size matches image
         g.DrawImage(_session.OriginalImage, 0, 0);
 
         // Draw all annotations in order (list order = z-order)

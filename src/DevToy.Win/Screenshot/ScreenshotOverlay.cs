@@ -125,9 +125,10 @@ class ScreenshotOverlay : Form
                     g.DrawImage(_screenCapture, 0, 0);
                     g.ResetClip();
 
-                    // Selection border
-                    using var borderPen = new Pen(Color.FromArgb(200, 80, 160, 255), 2f);
-                    borderPen.DashStyle = DashStyle.Solid;
+                    // Selection border (dotted)
+                    using var borderPen = new Pen(Color.FromArgb(200, 80, 160, 255), 1.5f);
+                    borderPen.DashStyle = DashStyle.Dash;
+                    borderPen.DashPattern = new float[] { 6f, 4f };
                     g.DrawRectangle(borderPen, rect);
 
                     // Corner handles
