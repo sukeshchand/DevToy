@@ -21,6 +21,18 @@ class UndoRedoManager
     public bool CanUndo => _undoStack.Count > 0;
     public bool CanRedo => _redoStack.Count > 0;
 
+    /// <summary>Access undo stack for serialization (bottom to top order).</summary>
+    public IReadOnlyList<IEditorAction> UndoItems => _undoStack.Reverse().ToList();
+
+    /// <summary>Access redo stack for serialization (bottom to top order).</summary>
+    public IReadOnlyList<IEditorAction> RedoItems => _redoStack.Reverse().ToList();
+
+    /// <summary>Push directly to undo stack without executing (for restore).</summary>
+    public void PushUndoRaw(IEditorAction action) => _undoStack.Push(action);
+
+    /// <summary>Push directly to redo stack without executing (for restore).</summary>
+    public void PushRedoRaw(IEditorAction action) => _redoStack.Push(action);
+
     public event Action? StateChanged;
 
     public void Execute(IEditorAction action)

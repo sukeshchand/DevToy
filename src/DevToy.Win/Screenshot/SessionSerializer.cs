@@ -46,6 +46,12 @@ static class SessionSerializer
             foreach (var obj in session.Annotations)
                 state.Annotations.Add(SerializeAnnotation(obj));
 
+            // Serialize undo/redo stacks (max 50 each)
+            foreach (var action in session.UndoRedo.UndoItems.Take(50))
+                state.UndoStack.Add(SerializeAction(action));
+            foreach (var action in session.UndoRedo.RedoItems.Take(50))
+                state.RedoStack.Add(SerializeAction(action));
+
             string dir = session.EditDir;
             Directory.CreateDirectory(dir);
             string json = JsonSerializer.Serialize(state, JsonOpts);
@@ -93,6 +99,26 @@ static class SessionSerializer
                 var obj = DeserializeAnnotation(data);
                 if (obj != null)
                     session.Annotations.Add(obj);
+            }
+
+            // Build ID lookup for action restoration
+            var idMap = new Dictionary<int, AnnotationObject>();
+            foreach (var obj in session.Annotations)
+                idMap[obj.Id] = obj;
+
+            // Restore undo stack (push in order so first item is at bottom)
+            session.UndoRedo.Clear();
+            foreach (var actionData in state.UndoStack)
+            {
+                var action = DeserializeAction(actionData, session.Annotations, idMap);
+                if (action != null)
+                    session.UndoRedo.PushUndoRaw(action);
+            }
+            foreach (var actionData in state.RedoStack)
+            {
+                var action = DeserializeAction(actionData, session.Annotations, idMap);
+                if (action != null)
+                    session.UndoRedo.PushRedoRaw(action);
             }
 
             return true;
@@ -212,6 +238,101 @@ static class SessionSerializer
         return obj;
     }
 
+    // --- Action serialization ---
+
+    private static ActionData SerializeAction(IEditorAction action)
+    {
+        var data = new ActionData { Type = action.GetType().Name, Description = action.Description };
+
+        switch (action)
+        {
+            case AddObjectAction add:
+                data.AnnotationId = GetObjId(add);
+                data.Annotation = SerializeAnnotation(GetObj(add));
+                break;
+            case DeleteObjectAction del:
+                data.AnnotationId = GetObjId(del);
+                data.Annotation = SerializeAnnotation(GetObj(del));
+                break;
+            case MoveObjectAction move:
+                data.AnnotationId = GetObjId(move);
+                data.Dx = GetField<float>(move, "_dx");
+                data.Dy = GetField<float>(move, "_dy");
+                break;
+            case ResizeObjectAction resize:
+                data.AnnotationId = GetObjId(resize);
+                data.Dx = GetField<float>(resize, "_dx");
+                data.Dy = GetField<float>(resize, "_dy");
+                data.Handle = GetField<HandlePosition>(resize, "_handle").ToString();
+                break;
+            case ChangeZIndexAction zIndex:
+                data.AnnotationId = GetObjId(zIndex);
+                data.OldIndex = GetField<int>(zIndex, "_oldIndex");
+                data.NewIndex = GetField<int>(zIndex, "_newIndex");
+                break;
+            case ModifyPropertyAction<Color> colorProp:
+                data.AnnotationId = -1; // property actions don't always have a target obj
+                data.PropertyOld = ToHex(GetField<Color>(colorProp, "_oldValue"));
+                data.PropertyNew = ToHex(GetField<Color>(colorProp, "_newValue"));
+                break;
+            case ModifyPropertyAction<float> floatProp:
+                data.AnnotationId = -1;
+                data.Dx = GetField<float>(floatProp, "_oldValue");
+                data.Dy = GetField<float>(floatProp, "_newValue");
+                break;
+        }
+
+        return data;
+    }
+
+    private static IEditorAction? DeserializeAction(ActionData data, List<AnnotationObject> objects,
+        Dictionary<int, AnnotationObject> idMap)
+    {
+        AnnotationObject? FindObj() => data.AnnotationId > 0 && idMap.TryGetValue(data.AnnotationId, out var o) ? o : null;
+
+        return data.Type switch
+        {
+            "AddObjectAction" => data.Annotation != null
+                ? new AddObjectAction(objects, FindObj() ?? DeserializeAnnotation(data.Annotation)!)
+                : null,
+            "DeleteObjectAction" => FindObj() is { } delObj
+                ? new DeleteObjectAction(objects, delObj)
+                : null,
+            "MoveObjectAction" => FindObj() is { } moveObj
+                ? new MoveObjectAction(moveObj, data.Dx, data.Dy)
+                : null,
+            "ResizeObjectAction" => FindObj() is { } resizeObj &&
+                Enum.TryParse<HandlePosition>(data.Handle, out var h)
+                ? new ResizeObjectAction(resizeObj, h, data.Dx, data.Dy)
+                : null,
+            "ChangeZIndexAction" => FindObj() is { } zObj
+                ? new ChangeZIndexAction(objects, zObj, data.OldIndex, data.NewIndex)
+                : null,
+            _ => null, // ModifyPropertyAction can't be reliably restored (lambda setters)
+        };
+    }
+
+    // Reflection helpers to read private fields from action objects
+    private static int GetObjId(object action)
+    {
+        var obj = GetObj(action);
+        return obj?.Id ?? -1;
+    }
+
+    private static AnnotationObject? GetObj(object action)
+    {
+        var field = action.GetType().GetField("_obj",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        return field?.GetValue(action) as AnnotationObject;
+    }
+
+    private static T GetField<T>(object action, string fieldName)
+    {
+        var field = action.GetType().GetField(fieldName,
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        return field != null ? (T)field.GetValue(action)! : default!;
+    }
+
     // --- Color helpers ---
 
     private static string ToHex(Color c) => $"#{c.A:X2}{c.R:X2}{c.G:X2}{c.B:X2}";
@@ -259,6 +380,8 @@ class SessionState
     [JsonPropertyName("borderThickness")] public float BorderThickness { get; set; }
     [JsonPropertyName("timestamp")] public DateTime Timestamp { get; set; }
     [JsonPropertyName("annotations")] public List<AnnotationData> Annotations { get; set; } = new();
+    [JsonPropertyName("undoStack")] public List<ActionData> UndoStack { get; set; } = new();
+    [JsonPropertyName("redoStack")] public List<ActionData> RedoStack { get; set; } = new();
 }
 
 class AnnotationData
@@ -286,4 +409,19 @@ class AnnotationData
     [JsonPropertyName("positionY")] public float PositionY { get; set; }
     [JsonPropertyName("fontSize")] public float FontSize { get; set; }
     [JsonPropertyName("bold")] public bool Bold { get; set; }
+}
+
+class ActionData
+{
+    [JsonPropertyName("type")] public string Type { get; set; } = "";
+    [JsonPropertyName("description")] public string? Description { get; set; }
+    [JsonPropertyName("annotationId")] public int AnnotationId { get; set; }
+    [JsonPropertyName("annotation")] public AnnotationData? Annotation { get; set; }
+    [JsonPropertyName("dx")] public float Dx { get; set; }
+    [JsonPropertyName("dy")] public float Dy { get; set; }
+    [JsonPropertyName("handle")] public string? Handle { get; set; }
+    [JsonPropertyName("oldIndex")] public int OldIndex { get; set; }
+    [JsonPropertyName("newIndex")] public int NewIndex { get; set; }
+    [JsonPropertyName("propertyOld")] public string? PropertyOld { get; set; }
+    [JsonPropertyName("propertyNew")] public string? PropertyNew { get; set; }
 }
