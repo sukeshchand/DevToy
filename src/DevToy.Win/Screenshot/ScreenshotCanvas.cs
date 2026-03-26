@@ -460,9 +460,15 @@ class ScreenshotCanvas : Control
 
         if (_selectedRegion.HasValue)
         {
-            var convertItem = new ToolStripMenuItem("Convert Selection to Layer");
-            convertItem.Click += (_, _) => ConvertRegionToLayer();
-            menu.Items.Add(convertItem);
+            var cutItem = new ToolStripMenuItem("Cut into Layer");
+            cutItem.Click += (_, _) => RegionToLayer(clearOriginal: true);
+            menu.Items.Add(cutItem);
+
+            var copyItem = new ToolStripMenuItem("Copy into Layer");
+            copyItem.Click += (_, _) => RegionToLayer(clearOriginal: false);
+            menu.Items.Add(copyItem);
+
+            menu.Items.Add(new ToolStripSeparator());
 
             var clearItem = new ToolStripMenuItem("Clear Selection");
             clearItem.Click += (_, _) => { _selectedRegion = null; Invalidate(); };
@@ -477,72 +483,67 @@ class ScreenshotCanvas : Control
         menu.Show(this, location);
     }
 
-    private void ConvertRegionToLayer()
+    private void RegionToLayer(bool clearOriginal)
     {
         if (_session == null || !_selectedRegion.HasValue) return;
 
         var rect = _selectedRegion.Value;
         int x = (int)rect.X, y = (int)rect.Y, w = (int)rect.Width, h = (int)rect.Height;
 
-        // Clamp to canvas bounds
         x = Math.Max(0, x);
         y = Math.Max(0, y);
         w = Math.Min(w, _session.CanvasSize.Width - x);
         h = Math.Min(h, _session.CanvasSize.Height - y);
         if (w <= 0 || h <= 0) return;
 
-        // Render the region content: bg + base image + annotations in that area
+        // Render the region content: bg + base image in that area
         var regionBmp = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(regionBmp))
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-
-            // Translate so the region's top-left is at (0,0)
             g.TranslateTransform(-x, -y);
 
-            // Draw bg
             using (var bgBrush = new SolidBrush(_session.CanvasBackgroundColor))
                 g.FillRectangle(bgBrush, 0, 0, _session.CanvasSize.Width, _session.CanvasSize.Height);
 
-            // Draw base image
             var imgOff = _session.ImageOffset;
             g.DrawImage(_session.OriginalImage, imgOff.X, imgOff.Y);
         }
 
-        // Fill the region on the original image with background color
-        // We need to paint bg over the base image in the selected area
-        using (var g = Graphics.FromImage(_session.OriginalImage))
+        // Cut mode: fill the original area with background color
+        if (clearOriginal)
         {
-            // Calculate the overlap between the region and the original image
-            var imgOff = _session.ImageOffset;
-            int imgX = x - imgOff.X;
-            int imgY = y - imgOff.Y;
-            int imgW = Math.Min(w, _session.OriginalImage.Width - imgX);
-            int imgH = Math.Min(h, _session.OriginalImage.Height - imgY);
-
-            if (imgX >= 0 && imgY >= 0 && imgW > 0 && imgH > 0)
+            using (var g = Graphics.FromImage(_session.OriginalImage))
             {
-                using var bgBrush = new SolidBrush(_session.CanvasBackgroundColor);
-                g.FillRectangle(bgBrush, imgX, imgY, imgW, imgH);
+                var imgOff = _session.ImageOffset;
+                int imgX = x - imgOff.X;
+                int imgY = y - imgOff.Y;
+                int imgW = Math.Min(w, _session.OriginalImage.Width - imgX);
+                int imgH = Math.Min(h, _session.OriginalImage.Height - imgY);
+
+                if (imgX >= 0 && imgY >= 0 && imgW > 0 && imgH > 0)
+                {
+                    using var bgBrush = new SolidBrush(_session.CanvasBackgroundColor);
+                    g.FillRectangle(bgBrush, imgX, imgY, imgW, imgH);
+                }
             }
         }
 
-        // Save modified base image and layer image to _edits folder
+        // Save to _edits folder
         string localPath = "";
         if (!string.IsNullOrEmpty(_session.EditId))
         {
             string dir = _session.EditDir;
             Directory.CreateDirectory(dir);
 
-            // Persist the modified base image so it survives session restore
-            _session.OriginalImage.Save(Path.Combine(dir, "base.png"), System.Drawing.Imaging.ImageFormat.Png);
+            if (clearOriginal)
+                _session.OriginalImage.Save(Path.Combine(dir, "base.png"), System.Drawing.Imaging.ImageFormat.Png);
 
             localPath = Path.Combine(dir, $"layer_{DateTime.Now:HHmmss}_{x}_{y}.png");
             regionBmp.Save(localPath, System.Drawing.Imaging.ImageFormat.Png);
         }
 
-        // Create ImageObject layer
         var imageObj = new ImageObject
         {
             Image = regionBmp,
