@@ -18,7 +18,7 @@ class ScreenshotEditorForm : Form
     public ScreenshotEditorForm(Bitmap capturedImage)
     {
         _session = new EditorSession(capturedImage);
-        SaveToTemp(_session, capturedImage);
+        InitEditFolder(_session, capturedImage);
         _theme = Themes.LoadSaved();
 
         Text = "DevToy \u2014 Screenshot Editor";
@@ -86,6 +86,9 @@ class ScreenshotEditorForm : Form
             _canvasContainer.Width = ClientSize.Width - _recentPanel.Width;
             _canvasContainer.CenterCanvas();
         };
+
+        // Auto-save state to _edits folder on every undo/redo action
+        _session.UndoRedo.StateChanged += () => SessionSerializer.Save(_session);
     }
 
     private void WireToolbarEvents()
@@ -229,8 +232,8 @@ class ScreenshotEditorForm : Form
         try
         {
             _canvas.CommitTextEdit();
-            string path = ScreenshotExporter.SaveToFile(_session);
-            CleanupTemp();
+            string path = GetLinkedSavePath();
+            ScreenshotExporter.SaveToFile(_session, path);
             ImageSaved?.Invoke(path);
             Close();
         }
@@ -256,7 +259,7 @@ class ScreenshotEditorForm : Form
             if (dlg.ShowDialog(this) == DialogResult.OK)
             {
                 ScreenshotExporter.SaveToFile(_session, dlg.FileName);
-                CleanupTemp();
+    
                 ImageSaved?.Invoke(dlg.FileName);
                 Close();
             }
@@ -273,9 +276,10 @@ class ScreenshotEditorForm : Form
         try
         {
             _canvas.CommitTextEdit();
+            string path = GetLinkedSavePath();
+            ScreenshotExporter.SaveToFile(_session, path);
             ScreenshotExporter.CopyToClipboard(_session);
-            CleanupTemp();
-            ImageCopied?.Invoke();
+            ImageSaved?.Invoke(path);
             Close();
         }
         catch (Exception ex) { Debug.WriteLine($"Copy failed: {ex.Message}"); }
@@ -286,8 +290,8 @@ class ScreenshotEditorForm : Form
         try
         {
             _canvas.CommitTextEdit();
-            string path = ScreenshotExporter.SaveToFile(_session);
-            CleanupTemp();
+            string path = GetLinkedSavePath();
+            ScreenshotExporter.SaveToFile(_session, path);
             var fileList = new System.Collections.Specialized.StringCollection();
             fileList.Add(path);
             Clipboard.SetFileDropList(fileList);
@@ -301,41 +305,67 @@ class ScreenshotEditorForm : Form
         }
     }
 
-    /// <summary>Save the captured image into a temp folder with preview + base image.</summary>
-    private static void SaveToTemp(EditorSession session, Bitmap capturedImage)
+    /// <summary>Create the _edits folder for this capture and save the base image.</summary>
+    private static void InitEditFolder(EditorSession session, Bitmap capturedImage)
     {
         try
         {
-            string id = DateTime.Now.ToString("yyyyMMdd_HHmmss_") + Guid.NewGuid().ToString("N")[..6];
-            session.TempId = id;
-            string dir = Path.Combine(AppPaths.ScreenshotsTempDir, id);
+            string editId = $"screenshot_{DateTime.Now:yyyy-MM-dd_HHmmss}";
+            session.EditId = editId;
+            string dir = session.EditDir;
             Directory.CreateDirectory(dir);
-
-            // Base image (original capture)
             capturedImage.Save(Path.Combine(dir, "base.png"), System.Drawing.Imaging.ImageFormat.Png);
 
-            // Preview (same as base initially)
-            capturedImage.Save(Path.Combine(dir, "preview.jpg"), System.Drawing.Imaging.ImageFormat.Jpeg);
+            // Also save to screenshots/ so it appears in the recent list immediately
+            Directory.CreateDirectory(AppPaths.ScreenshotsDir);
+            capturedImage.Save(Path.Combine(AppPaths.ScreenshotsDir, editId + ".png"), System.Drawing.Imaging.ImageFormat.Png);
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"SaveToTemp failed: {ex.Message}");
+            Debug.WriteLine($"InitEditFolder failed: {ex.Message}");
         }
     }
 
-    /// <summary>Delete the temp folder for the current session.</summary>
-    private void CleanupTemp()
+    /// <summary>Get the save path in screenshots/ linked to the _edits folder name.</summary>
+    private string GetLinkedSavePath()
     {
-        if (string.IsNullOrEmpty(_session.TempId)) return;
+        Directory.CreateDirectory(AppPaths.ScreenshotsDir);
+        return Path.Combine(AppPaths.ScreenshotsDir, _session.EditId + ".png");
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
         try
         {
-            string dir = Path.Combine(AppPaths.ScreenshotsTempDir, _session.TempId);
-            if (Directory.Exists(dir))
-                Directory.Delete(dir, true);
+            _canvas.CommitTextEdit();
+
+            // Save final image to screenshots/
+            string path = GetLinkedSavePath();
+            ScreenshotExporter.SaveToFile(_session, path);
+
+            // Save state + preview to _edits folder
+            SessionSerializer.Save(_session);
+            SavePreview();
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"CleanupTemp failed: {ex.Message}");
+            Debug.WriteLine($"Auto-save on close failed: {ex.Message}");
+        }
+        base.OnFormClosing(e);
+    }
+
+    private void SavePreview()
+    {
+        try
+        {
+            string dir = _session.EditDir;
+            if (!Directory.Exists(dir)) return;
+            using var preview = ScreenshotExporter.Flatten(_session);
+            preview.Save(Path.Combine(dir, "preview.png"), System.Drawing.Imaging.ImageFormat.Png);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"SavePreview failed: {ex.Message}");
         }
     }
 
