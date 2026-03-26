@@ -228,6 +228,20 @@ class RecentImagesPanel : Panel
         thumb.DoubleClick += OnDblClick;
         label.DoubleClick += OnDblClick;
 
+        // Drag support — drag the file path to the canvas
+        Point dragStart = Point.Empty;
+        bool dragging = false;
+        thumb.MouseDown += (_, me) => { if (me.Button == MouseButtons.Left) { dragStart = me.Location; dragging = false; } };
+        thumb.MouseMove += (_, me) =>
+        {
+            if (me.Button == MouseButtons.Left && !dragging &&
+                (Math.Abs(me.X - dragStart.X) > 4 || Math.Abs(me.Y - dragStart.Y) > 4))
+            {
+                dragging = true;
+                thumb.DoDragDrop(path, DragDropEffects.Copy);
+            }
+        };
+
         panel.MouseEnter += (_, _) => { if (_selectedItemPanel != panel) panel.BackColor = _theme.PrimaryDim; };
         panel.MouseLeave += (_, _) => { if (_selectedItemPanel != panel) panel.BackColor = defaultBg; };
         thumb.MouseEnter += (_, _) => { if (_selectedItemPanel != panel) panel.BackColor = _theme.PrimaryDim; };

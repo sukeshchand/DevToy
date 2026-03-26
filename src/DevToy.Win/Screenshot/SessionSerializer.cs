@@ -160,6 +160,13 @@ static class SessionSerializer
                 data.FontSize = txt.FontSize;
                 data.Bold = txt.Bold;
                 break;
+            case ImageObject imgObj:
+                data.PositionX = imgObj.Position.X;
+                data.PositionY = imgObj.Position.Y;
+                data.DisplayW = imgObj.DisplaySize.Width;
+                data.DisplayH = imgObj.DisplaySize.Height;
+                data.ImageFile = imgObj.SourcePath ?? "";
+                break;
             case RectangleObject rect:
                 data.StartX = rect.Start.X; data.StartY = rect.Start.Y;
                 data.EndX = rect.End.X; data.EndY = rect.End.Y;
@@ -224,6 +231,8 @@ static class SessionSerializer
                 FontSize = data.FontSize > 0 ? data.FontSize : 16f,
                 Bold = data.Bold,
             },
+            "ImageObject" when !string.IsNullOrEmpty(data.ImageFile) && File.Exists(data.ImageFile) =>
+                LoadImageObject(data),
             _ => null,
         };
 
@@ -238,6 +247,35 @@ static class SessionSerializer
         }
 
         return obj;
+    }
+
+    private static ImageObject? LoadImageObject(AnnotationData data)
+    {
+        try
+        {
+            Bitmap img;
+            using (var stream = File.OpenRead(data.ImageFile!))
+            using (var bmp = new Bitmap(stream))
+            {
+                img = new Bitmap(bmp.Width, bmp.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                using var g = Graphics.FromImage(img);
+                g.DrawImage(bmp, 0, 0);
+            }
+            return new ImageObject
+            {
+                Image = img,
+                Position = new PointF(data.PositionX, data.PositionY),
+                DisplaySize = new SizeF(
+                    data.DisplayW > 0 ? data.DisplayW : img.Width,
+                    data.DisplayH > 0 ? data.DisplayH : img.Height),
+                SourcePath = data.ImageFile,
+            };
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"LoadImageObject failed: {ex.Message}");
+            return null;
+        }
     }
 
     // --- Action serialization ---
@@ -431,6 +469,11 @@ class AnnotationData
     [JsonPropertyName("positionY")] public float PositionY { get; set; }
     [JsonPropertyName("fontSize")] public float FontSize { get; set; }
     [JsonPropertyName("bold")] public bool Bold { get; set; }
+
+    // Image object
+    [JsonPropertyName("imageFile")] public string? ImageFile { get; set; }
+    [JsonPropertyName("displayW")] public float DisplayW { get; set; }
+    [JsonPropertyName("displayH")] public float DisplayH { get; set; }
 }
 
 class ActionData

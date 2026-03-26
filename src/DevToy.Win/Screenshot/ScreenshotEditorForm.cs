@@ -89,6 +89,9 @@ class ScreenshotEditorForm : Form
             _canvasContainer.CenterCanvas();
         };
 
+        // When canvas resizes due to dropped image, sync container
+        _canvas.CanvasResizeRequested += _ => _canvasContainer.SyncCanvasSize();
+
         // Auto-save state to _edits folder on every undo/redo action
         _session.UndoRedo.StateChanged += () => SessionSerializer.Save(_session);
     }

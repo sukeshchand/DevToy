@@ -25,6 +25,9 @@ class ScreenshotCanvas : Control
     public event Action? CanvasChanged;
     public event Action? SelectionChanged;
 
+    /// <summary>Fires when canvas needs to be resized (e.g. to fit a dropped image).</summary>
+    public event Action<Size>? CanvasResizeRequested;
+
     public ScreenshotCanvas()
     {
         SetStyle(
@@ -35,6 +38,86 @@ class ScreenshotCanvas : Control
             true);
         BackColor = Color.FromArgb(30, 30, 30);
         Cursor = Cursors.Cross;
+        AllowDrop = true;
+
+        DragEnter += OnDragEnter;
+        DragDrop += OnDragDropHandler;
+    }
+
+    private void OnDragEnter(object? sender, DragEventArgs e)
+    {
+        if (e.Data?.GetDataPresent(DataFormats.Text) == true ||
+            e.Data?.GetDataPresent(DataFormats.FileDrop) == true)
+        {
+            e.Effect = DragDropEffects.Copy;
+        }
+    }
+
+    private void OnDragDropHandler(object? sender, DragEventArgs e)
+    {
+        if (_session == null) return;
+
+        string? filePath = null;
+
+        // From our panel (text = file path)
+        if (e.Data?.GetDataPresent(DataFormats.Text) == true)
+            filePath = e.Data.GetData(DataFormats.Text) as string;
+
+        // From external file drop
+        if (filePath == null && e.Data?.GetDataPresent(DataFormats.FileDrop) == true)
+        {
+            var files = e.Data.GetData(DataFormats.FileDrop) as string[];
+            if (files?.Length > 0) filePath = files[0];
+        }
+
+        if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath)) return;
+
+        try
+        {
+            // Load the image
+            Bitmap img;
+            using (var stream = File.OpenRead(filePath))
+            using (var bmp = new Bitmap(stream))
+            {
+                img = new Bitmap(bmp.Width, bmp.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                using var g = Graphics.FromImage(img);
+                g.DrawImage(bmp, 0, 0);
+            }
+
+            // Calculate drop position in canvas coordinates
+            var clientPt = PointToClient(new Point(e.X, e.Y));
+            float dropX = Math.Max(0, clientPt.X);
+            float dropY = Math.Max(0, clientPt.Y);
+
+            // Check if canvas needs to expand to fit the dropped image
+            float neededW = dropX + img.Width;
+            float neededH = dropY + img.Height;
+            if (neededW > _session.CanvasSize.Width || neededH > _session.CanvasSize.Height)
+            {
+                var newSize = new Size(
+                    Math.Max(_session.CanvasSize.Width, (int)neededW),
+                    Math.Max(_session.CanvasSize.Height, (int)neededH));
+                _session.CanvasSize = newSize;
+                Size = new Size(newSize.Width, newSize.Height);
+                CanvasResizeRequested?.Invoke(newSize);
+            }
+
+            // Create the image annotation
+            var imageObj = new ImageObject
+            {
+                Image = img,
+                Position = new PointF(dropX, dropY),
+                DisplaySize = new SizeF(img.Width, img.Height),
+                SourcePath = filePath,
+            };
+
+            _session.AddAnnotation(imageObj);
+            Invalidate();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Drop failed: {ex.Message}");
+        }
     }
 
     public EditorSession? Session
