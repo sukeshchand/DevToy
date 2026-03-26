@@ -458,7 +458,23 @@ class ScreenshotCanvas : Control
     {
         var menu = new ContextMenuStrip();
 
-        if (_selectedRegion.HasValue)
+        if (_session?.SelectedObject != null)
+        {
+            var bringFwd = new ToolStripMenuItem("Bring Forward");
+            bringFwd.Click += (_, _) => { _session.BringForward(); Invalidate(); };
+            menu.Items.Add(bringFwd);
+
+            var sendBack = new ToolStripMenuItem("Send Backward");
+            sendBack.Click += (_, _) => { _session.SendBackward(); Invalidate(); };
+            menu.Items.Add(sendBack);
+
+            menu.Items.Add(new ToolStripSeparator());
+
+            var deleteItem = new ToolStripMenuItem("Delete");
+            deleteItem.Click += (_, _) => { _session.DeleteSelected(); Invalidate(); };
+            menu.Items.Add(deleteItem);
+        }
+        else if (_selectedRegion.HasValue)
         {
             var cutItem = new ToolStripMenuItem("Cut into Layer");
             cutItem.Click += (_, _) => RegionToLayer(clearOriginal: true);
