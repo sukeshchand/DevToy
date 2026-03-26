@@ -52,6 +52,7 @@ class PopupAppContext : ApplicationContext
         menu.Items.Add("Show Last Notification", null, (_, _) => _popupForm.BringToForeground());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Take Screenshot", null, (_, _) => TakeScreenshot());
+        menu.Items.Add("Edit Last Screenshot", null, (_, _) => EditLastScreenshot());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Settings...", null, (_, _) => ShowSettingsForm());
         menu.Items.Add(new ToolStripSeparator());
@@ -89,6 +90,46 @@ class PopupAppContext : ApplicationContext
             editor.Show();
         };
         overlay.Show();
+    }
+
+    private void EditLastScreenshot()
+    {
+        try
+        {
+            string dir = AppPaths.ScreenshotsDir;
+            if (!Directory.Exists(dir)) return;
+
+            var lastFile = Directory.GetFiles(dir, "*.png")
+                .Concat(Directory.GetFiles(dir, "*.jpg"))
+                .Concat(Directory.GetFiles(dir, "*.bmp"))
+                .OrderByDescending(File.GetCreationTime)
+                .FirstOrDefault();
+
+            if (lastFile == null) return;
+
+            Bitmap image;
+            using (var stream = File.OpenRead(lastFile))
+            using (var bmp = new Bitmap(stream))
+            {
+                image = new Bitmap(bmp.Width, bmp.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                using var g = Graphics.FromImage(image);
+                g.DrawImage(bmp, 0, 0);
+            }
+
+            var editor = new ScreenshotEditorForm(image);
+            editor.ImageSaved += filePath =>
+            {
+                _popupForm.Invoke(() =>
+                {
+                    _popupForm.ShowPopup("Screenshot Saved", $"Saved to:\n`{filePath}`", NotificationType.Success);
+                });
+            };
+            editor.Show();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"EditLastScreenshot failed: {ex.Message}");
+        }
     }
 
     private void ShowSettingsForm()

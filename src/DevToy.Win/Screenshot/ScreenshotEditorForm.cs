@@ -28,6 +28,9 @@ class ScreenshotEditorForm : Form
         ShowInTaskbar = true;
         TopMost = true;
         KeyPreview = true;
+
+        // Come to front on open, then allow going behind other windows
+        Shown += (_, _) => { TopMost = false; };
         MinimumSize = new Size(500, 350);
         Icon = Themes.CreateAppIcon(_theme.Primary);
         BackColor = _theme.BgDark;
