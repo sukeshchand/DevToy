@@ -22,6 +22,12 @@ class ScreenshotCanvas : Control
     // Text editing
     private TextObject? _editingText;
 
+    // Region selection (for convert to layer)
+    private bool _isSelectingRegion;
+    private PointF _regionStart;
+    private PointF _regionEnd;
+    private RectangleF? _selectedRegion;
+
     public event Action? CanvasChanged;
     public event Action? SelectionChanged;
 
@@ -180,6 +186,48 @@ class ScreenshotCanvas : Control
         {
             _drawingObject.Render(g);
         }
+
+        // Draw region selection rectangle
+        if (_isSelectingRegion || _selectedRegion.HasValue)
+        {
+            var rect = _selectedRegion ?? GetRegionRect();
+            if (rect.Width > 2 && rect.Height > 2)
+            {
+                // Semi-transparent overlay outside selection
+                using var dimBrush = new SolidBrush(Color.FromArgb(60, 0, 0, 0));
+                g.FillRectangle(dimBrush, 0, 0, ClientSize.Width, rect.Y);
+                g.FillRectangle(dimBrush, 0, rect.Bottom, ClientSize.Width, ClientSize.Height - rect.Bottom);
+                g.FillRectangle(dimBrush, 0, rect.Y, rect.X, rect.Height);
+                g.FillRectangle(dimBrush, rect.Right, rect.Y, ClientSize.Width - rect.Right, rect.Height);
+
+                // Dashed selection border
+                using var borderPen = new Pen(Color.FromArgb(200, 80, 160, 255), 1.5f);
+                borderPen.DashStyle = DashStyle.Dash;
+                borderPen.DashPattern = new float[] { 6f, 4f };
+                g.DrawRectangle(borderPen, rect.X, rect.Y, rect.Width, rect.Height);
+
+                // Size label
+                using var font = new Font("Segoe UI", 8f);
+                string sizeText = $"{(int)rect.Width} x {(int)rect.Height}";
+                var textSize = g.MeasureString(sizeText, font);
+                float lx = rect.Right - textSize.Width - 4;
+                float ly = rect.Y - textSize.Height - 4;
+                if (ly < 0) ly = rect.Bottom + 4;
+                using var labelBg = new SolidBrush(Color.FromArgb(180, 0, 0, 0));
+                g.FillRectangle(labelBg, lx - 2, ly, textSize.Width + 4, textSize.Height);
+                using var labelBrush = new SolidBrush(Color.FromArgb(200, 80, 160, 255));
+                g.DrawString(sizeText, font, labelBrush, lx, ly);
+            }
+        }
+    }
+
+    private RectangleF GetRegionRect()
+    {
+        float x = Math.Min(_regionStart.X, _regionEnd.X);
+        float y = Math.Min(_regionStart.Y, _regionEnd.Y);
+        float w = Math.Abs(_regionEnd.X - _regionStart.X);
+        float h = Math.Abs(_regionEnd.Y - _regionStart.Y);
+        return new RectangleF(x, y, w, h);
     }
 
     private void RenderBorder(Graphics g)
@@ -227,7 +275,16 @@ class ScreenshotCanvas : Control
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
-        if (_session == null || e.Button != MouseButtons.Left) return;
+        if (_session == null) return;
+
+        // Right-click context menu
+        if (e.Button == MouseButtons.Right)
+        {
+            ShowCanvasContextMenu(e.Location);
+            return;
+        }
+
+        if (e.Button != MouseButtons.Left) return;
         Focus();
         var pt = new PointF(e.X, e.Y);
 
@@ -265,6 +322,13 @@ class ScreenshotCanvas : Control
     {
         if (_session == null) return;
         var pt = new PointF(e.X, e.Y);
+
+        if (_isSelectingRegion)
+        {
+            _regionEnd = pt;
+            Invalidate();
+            return;
+        }
 
         if (_isDrawing && _drawingObject != null)
         {
@@ -315,6 +379,18 @@ class ScreenshotCanvas : Control
     protected override void OnMouseUp(MouseEventArgs e)
     {
         if (_session == null || e.Button != MouseButtons.Left) return;
+
+        if (_isSelectingRegion)
+        {
+            _isSelectingRegion = false;
+            var rect = GetRegionRect();
+            if (rect.Width > 5 && rect.Height > 5)
+                _selectedRegion = rect;
+            else
+                _selectedRegion = null;
+            Invalidate();
+            return;
+        }
 
         if (_isDrawing && _drawingObject != null)
         {
@@ -378,8 +454,110 @@ class ScreenshotCanvas : Control
 
     // --- Private methods ---
 
+    private void ShowCanvasContextMenu(Point location)
+    {
+        var menu = new ContextMenuStrip();
+
+        if (_selectedRegion.HasValue)
+        {
+            var convertItem = new ToolStripMenuItem("Convert Selection to Layer");
+            convertItem.Click += (_, _) => ConvertRegionToLayer();
+            menu.Items.Add(convertItem);
+
+            var clearItem = new ToolStripMenuItem("Clear Selection");
+            clearItem.Click += (_, _) => { _selectedRegion = null; Invalidate(); };
+            menu.Items.Add(clearItem);
+        }
+        else
+        {
+            var hint = new ToolStripMenuItem("Drag to select a region first") { Enabled = false };
+            menu.Items.Add(hint);
+        }
+
+        menu.Show(this, location);
+    }
+
+    private void ConvertRegionToLayer()
+    {
+        if (_session == null || !_selectedRegion.HasValue) return;
+
+        var rect = _selectedRegion.Value;
+        int x = (int)rect.X, y = (int)rect.Y, w = (int)rect.Width, h = (int)rect.Height;
+
+        // Clamp to canvas bounds
+        x = Math.Max(0, x);
+        y = Math.Max(0, y);
+        w = Math.Min(w, _session.CanvasSize.Width - x);
+        h = Math.Min(h, _session.CanvasSize.Height - y);
+        if (w <= 0 || h <= 0) return;
+
+        // Render the region content: bg + base image + annotations in that area
+        var regionBmp = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(regionBmp))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+
+            // Translate so the region's top-left is at (0,0)
+            g.TranslateTransform(-x, -y);
+
+            // Draw bg
+            using (var bgBrush = new SolidBrush(_session.CanvasBackgroundColor))
+                g.FillRectangle(bgBrush, 0, 0, _session.CanvasSize.Width, _session.CanvasSize.Height);
+
+            // Draw base image
+            var imgOff = _session.ImageOffset;
+            g.DrawImage(_session.OriginalImage, imgOff.X, imgOff.Y);
+        }
+
+        // Fill the region on the original image with background color
+        // We need to paint bg over the base image in the selected area
+        using (var g = Graphics.FromImage(_session.OriginalImage))
+        {
+            // Calculate the overlap between the region and the original image
+            var imgOff = _session.ImageOffset;
+            int imgX = x - imgOff.X;
+            int imgY = y - imgOff.Y;
+            int imgW = Math.Min(w, _session.OriginalImage.Width - imgX);
+            int imgH = Math.Min(h, _session.OriginalImage.Height - imgY);
+
+            if (imgX >= 0 && imgY >= 0 && imgW > 0 && imgH > 0)
+            {
+                using var bgBrush = new SolidBrush(_session.CanvasBackgroundColor);
+                g.FillRectangle(bgBrush, imgX, imgY, imgW, imgH);
+            }
+        }
+
+        // Save the layer image to _edits folder
+        string localPath = "";
+        if (!string.IsNullOrEmpty(_session.EditId))
+        {
+            string dir = _session.EditDir;
+            Directory.CreateDirectory(dir);
+            localPath = Path.Combine(dir, $"layer_{DateTime.Now:HHmmss}_{x}_{y}.png");
+            regionBmp.Save(localPath, System.Drawing.Imaging.ImageFormat.Png);
+        }
+
+        // Create ImageObject layer
+        var imageObj = new ImageObject
+        {
+            Image = regionBmp,
+            Position = new PointF(x, y),
+            DisplaySize = new SizeF(w, h),
+            SourcePath = localPath,
+        };
+
+        _session.AddAnnotation(imageObj);
+        _selectedRegion = null;
+        Invalidate();
+        CanvasChanged?.Invoke();
+    }
+
     private void HandleSelectMouseDown(PointF pt)
     {
+        // Clear any existing region selection
+        _selectedRegion = null;
+
         // Check if clicking a handle of selected object
         if (_session!.SelectedObject != null)
         {
@@ -404,6 +582,13 @@ class ScreenshotCanvas : Control
             _lastDragPos = pt;
             _totalMoveDx = 0;
             _totalMoveDy = 0;
+        }
+        else
+        {
+            // No object hit — start region selection
+            _isSelectingRegion = true;
+            _regionStart = pt;
+            _regionEnd = pt;
         }
 
         Invalidate();
