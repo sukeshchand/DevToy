@@ -116,7 +116,7 @@ class RecentImagesPanel : Panel
             files = Directory.GetFiles(dir, "*.png")
                 .Concat(Directory.GetFiles(dir, "*.jpg"))
                 .Concat(Directory.GetFiles(dir, "*.bmp"))
-                .OrderByDescending(File.GetLastWriteTime)
+                .OrderByDescending(File.GetCreationTime)
                 .Take(MaxItems)
                 .ToArray();
         }

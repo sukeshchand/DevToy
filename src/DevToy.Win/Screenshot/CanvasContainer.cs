@@ -10,7 +10,7 @@ namespace DevToy;
 /// </summary>
 class CanvasContainer : Panel
 {
-    private readonly ScreenshotCanvas _canvas;
+    private ScreenshotCanvas _canvas;
     private const int HandleSize = 8;
     private const int HandleHitZone = 10;
 
@@ -35,6 +35,15 @@ class CanvasContainer : Panel
         BackColor = Color.FromArgb(30, 30, 30);
         AutoScroll = false;
 
+        Controls.Add(_canvas);
+        CenterCanvas();
+    }
+
+    /// <summary>Replace the canvas with a new one.</summary>
+    public void SetCanvas(ScreenshotCanvas newCanvas)
+    {
+        Controls.Remove(_canvas);
+        _canvas = newCanvas;
         Controls.Add(_canvas);
         CenterCanvas();
     }

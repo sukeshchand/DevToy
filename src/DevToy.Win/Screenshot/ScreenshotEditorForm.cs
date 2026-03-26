@@ -378,15 +378,13 @@ class ScreenshotEditorForm : Form
             if (Directory.Exists(editDir))
                 SessionSerializer.Restore(_session);
 
-            // Replace canvas
-            _canvasContainer.Controls.Remove(_canvas);
+            // Replace canvas via container (handles remove/add/center)
             _canvas = new ScreenshotCanvas
             {
                 Size = new Size(_session.CanvasSize.Width, _session.CanvasSize.Height),
                 Session = _session,
             };
-            _canvasContainer.Controls.Add(_canvas);
-            _canvasContainer.CenterCanvas();
+            _canvasContainer.SetCanvas(_canvas);
 
             // Auto-save on undo/redo for new session
             _session.UndoRedo.StateChanged += () => SessionSerializer.Save(_session);
