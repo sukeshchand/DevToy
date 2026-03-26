@@ -280,6 +280,8 @@ class SettingsForm : Form
         claudePage.Controls.Add(statusLineLabel);
         cy += 26;
 
+        var slCheckboxes = new List<CheckBox>();
+
         var statusLineCheck = new CheckBox
         {
             Text = "Enable Claude Code status line",
@@ -328,6 +330,9 @@ class SettingsForm : Form
                     statusLineStatus.ForeColor = currentTheme.TextSecondary;
                     statusLineStatus.Text = "Disabled — restart Claude Code to apply";
                 }
+                // Enable/disable sub-checkboxes
+                foreach (var slCb in slCheckboxes)
+                    slCb.Enabled = statusLineCheck.Checked;
             }
             catch (Exception ex)
             {
@@ -367,6 +372,7 @@ class SettingsForm : Form
             var prop = typeof(AppSettingsData).GetProperty(item.Setting);
             bool isChecked = prop != null ? (bool)prop.GetValue(slSettings)! : item.Default;
 
+            bool slEnabled = statusLineCheck.Checked;
             var cb = new CheckBox
             {
                 Text = item.Label,
@@ -374,10 +380,12 @@ class SettingsForm : Form
                 ForeColor = currentTheme.TextPrimary,
                 BackColor = Color.Transparent,
                 Checked = isChecked,
+                Enabled = slEnabled,
                 AutoSize = true,
                 Location = new Point(tp + col * colWidth, cy + row * 22),
                 Cursor = Cursors.Hand,
             };
+            slCheckboxes.Add(cb);
             string settingName = item.Setting;
             cb.CheckedChanged += (_, _) =>
             {

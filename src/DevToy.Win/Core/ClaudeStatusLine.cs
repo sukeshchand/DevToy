@@ -114,6 +114,10 @@ static class ClaudeStatusLine
     {
         try
         {
+            // Ensure the latest script is on disk
+            Directory.CreateDirectory(AppPaths.ScriptsDir);
+            ExtractScript();
+
             var settings = AppSettings.Load();
             var config = new JsonObject
             {
