@@ -1,10 +1,10 @@
 
 <#
 .SYNOPSIS
-    Publishes DevToy and optionally deploys to a network update location.
+    Publishes ProdToy and optionally deploys to a network update location.
 
 .PARAMETER DeployPath
-    Network path to copy the exe and metadata.json to (e.g. \\server\share\DevToy).
+    Network path to copy the exe and metadata.json to (e.g. \\server\share\ProdToy).
     If omitted, only builds to the local release/ folder.
 
 .PARAMETER ReleaseNotes
@@ -15,7 +15,7 @@
 
 .EXAMPLE
     .\publish.ps1
-    .\publish.ps1 -DeployPath "\\server\share\DevToy" -ReleaseNotes "Added auto-update feature"
+    .\publish.ps1 -DeployPath "\\server\share\ProdToy" -ReleaseNotes "Added auto-update feature"
 #>
 param(
     [string]$DeployPath = "",
@@ -25,8 +25,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$versionFile = "src\DevToy.Win\Core\AppVersion.cs"
-$projectDir  = "src\DevToy.Win"
+$versionFile = "src\ProdToy.Win\Core\AppVersion.cs"
+$projectDir  = "src\ProdToy.Win"
 $releaseDir  = "release"
 
 # --- Read current version ---
@@ -55,8 +55,8 @@ if (-not $SkipVersionBump) {
 }
 
 # --- Clean and publish ---
-if (Test-Path "$releaseDir\DevToy.exe") {
-    Remove-Item "$releaseDir\DevToy.exe" -Force
+if (Test-Path "$releaseDir\ProdToy.exe") {
+    Remove-Item "$releaseDir\ProdToy.exe" -Force
 }
 
 Write-Host "Publishing..." -ForegroundColor Cyan
@@ -80,7 +80,7 @@ Write-Host "Created $metadataPath" -ForegroundColor Green
 # --- Deploy to network path ---
 if ($DeployPath -and (Test-Path $DeployPath)) {
     Write-Host "Deploying to $DeployPath ..." -ForegroundColor Cyan
-    Copy-Item "$releaseDir\DevToy.exe" $DeployPath -Force
+    Copy-Item "$releaseDir\ProdToy.exe" $DeployPath -Force
     Copy-Item $metadataPath $DeployPath -Force
     Write-Host "Deployed v$newVersion to $DeployPath" -ForegroundColor Green
 } elseif ($DeployPath) {
@@ -89,5 +89,5 @@ if ($DeployPath -and (Test-Path $DeployPath)) {
 
 Write-Host ""
 Write-Host "Published v$newVersion to $releaseDir\" -ForegroundColor Green
-Write-Host "  DevToy.exe  $('{0:N0}' -f (Get-Item "$releaseDir\DevToy.exe").Length) bytes" -ForegroundColor Gray
+Write-Host "  ProdToy.exe  $('{0:N0}' -f (Get-Item "$releaseDir\ProdToy.exe").Length) bytes" -ForegroundColor Gray
 Write-Host "  metadata.json" -ForegroundColor Gray

@@ -4,37 +4,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DevToy is a Windows developer utility application. It started as a notification popup for Claude Code and is expanding into a general-purpose developer tool. Currently it displays rich notifications (task completions, errors, pending questions) with themed UI, markdown rendering, and response history. It integrates with Claude Code via hooks and named-pipe IPC.
+ProdToy is a Windows developer utility application. It started as a notification popup for Claude Code and is expanding into a general-purpose developer tool. Currently it displays rich notifications (task completions, errors, pending questions) with themed UI, markdown rendering, and response history. It integrates with Claude Code via hooks and named-pipe IPC.
 
 ## Build & Run Commands
 
 ```bash
 # Build
-dotnet build src/DevToy.sln
+dotnet build src/ProdToy.sln
 
 # Build Release
-dotnet build -c Release src/DevToy.sln
+dotnet build -c Release src/ProdToy.sln
 
 # Run setup form (no arguments)
-dotnet run --project src/DevToy.Win
+dotnet run --project src/ProdToy.Win
 
 # Run popup with notification
-dotnet run --project src/DevToy.Win -- --title "Title" --message "Message" --type "info"
+dotnet run --project src/ProdToy.Win -- --title "Title" --message "Message" --type "info"
 
 # Publish single-file executable
-dotnet publish -c Release src/DevToy.Win
+dotnet publish -c Release src/ProdToy.Win
 ```
 
 There are no tests or linting configured.
 
 ## Architecture
 
-**Single solution** (`src/DevToy.sln`) with one WinForms project (`src/DevToy.Win/`) targeting .NET 8.0 (net8.0-windows). Only external dependency is `Microsoft.Web.WebView2` for rendering HTML content. All classes share the `DevToy` namespace.
+**Single solution** (`src/ProdToy.sln`) with one WinForms project (`src/ProdToy.Win/`) targeting .NET 8.0 (net8.0-windows). Only external dependency is `Microsoft.Web.WebView2` for rendering HTML content. All classes share the `ProdToy` namespace. (Renamed from DevToy.)
 
 ### Folder Structure
 
 ```
-src/DevToy.Win/
+src/ProdToy.Win/
   Program.cs                 Entry point, CLI arg parsing, single-instance mutex, pipe client
   Core/
     AppVersion.cs            Central version constant
