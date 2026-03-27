@@ -398,9 +398,47 @@ class SettingsForm : Form
 
         var notifSubControls = new List<Control>();
 
+        var notifModeLabel = new Label
+        {
+            Text = "Notification type:",
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = currentTheme.TextPrimary,
+            AutoSize = true,
+            Enabled = notifEnabled,
+            Location = new Point(tp + 8, cy + 3),
+            BackColor = Color.Transparent,
+        };
+        claudePage.Controls.Add(notifModeLabel);
+        notifSubControls.Add(notifModeLabel);
+
+        var notifModes = new[] { "Popup", "Windows", "Popup + Windows" };
+        var currentMode = AppSettings.Load().NotificationMode;
+        var notifModeCombo = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Font = new Font("Segoe UI", 9f),
+            BackColor = currentTheme.BgHeader,
+            ForeColor = currentTheme.TextPrimary,
+            FlatStyle = FlatStyle.Flat,
+            Size = new Size(140, 24),
+            Enabled = notifEnabled,
+            Location = new Point(tp + 130, cy),
+        };
+        foreach (var mode in notifModes)
+            notifModeCombo.Items.Add(mode);
+        notifModeCombo.SelectedItem = notifModes.Contains(currentMode) ? currentMode : "Popup";
+        notifModeCombo.SelectedIndexChanged += (_, _) =>
+        {
+            var s = AppSettings.Load();
+            AppSettings.Save(s with { NotificationMode = notifModeCombo.SelectedItem?.ToString() ?? "Popup" });
+        };
+        claudePage.Controls.Add(notifModeCombo);
+        notifSubControls.Add(notifModeCombo);
+        cy += 30;
+
         var quotesCheck = new CheckBox
         {
-            Text = "Show quotes in header",
+            Text = "Show quotes in popup header",
             Font = new Font("Segoe UI", 9.5f),
             ForeColor = currentTheme.TextPrimary,
             BackColor = Color.Transparent,

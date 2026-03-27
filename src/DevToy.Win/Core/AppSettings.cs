@@ -15,6 +15,10 @@ record AppSettingsData
     [JsonPropertyName("notificationsEnabled")]
     public bool NotificationsEnabled { get; init; } = true;
 
+    // "Popup", "Windows", "Popup + Windows"
+    [JsonPropertyName("notificationMode")]
+    public string NotificationMode { get; init; } = "Popup";
+
     [JsonPropertyName("showQuotes")]
     public bool ShowQuotes { get; init; } = true;
 

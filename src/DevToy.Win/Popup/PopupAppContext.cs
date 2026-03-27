@@ -239,6 +239,24 @@ class PopupAppContext : ApplicationContext
         }
     }
 
+    private void ShowWindowsNotification(string title, string message, string type)
+    {
+        var icon = type switch
+        {
+            NotificationType.Error => ToolTipIcon.Error,
+            NotificationType.Success => ToolTipIcon.Info,
+            NotificationType.Pending => ToolTipIcon.Warning,
+            _ => ToolTipIcon.Info,
+        };
+
+        // Truncate message for balloon notification
+        string truncated = message.Length > 200 ? message[..197] + "..." : message;
+        // Strip markdown formatting
+        truncated = truncated.Replace("`", "").Replace("*", "").Replace("#", "");
+
+        _trayIcon.ShowBalloonTip(5000, title, truncated, icon);
+    }
+
     private void ExitApp()
     {
         _cts.Cancel();
@@ -272,12 +290,23 @@ class PopupAppContext : ApplicationContext
                     var msg = JsonSerializer.Deserialize<PipeMessage>(json);
                     if (msg != null && AppSettings.Load().NotificationsEnabled)
                     {
-                        _popupForm.Invoke(() => _popupForm.ShowPopup(
-                            msg.title ?? "DevToy",
-                            msg.message ?? "Task completed.",
-                            msg.type ?? NotificationType.Info,
-                            msg.sessionId ?? "",
-                            msg.cwd ?? ""));
+                        var mode = AppSettings.Load().NotificationMode;
+                        var title = msg.title ?? "DevToy";
+                        var message = msg.message ?? "Task completed.";
+                        var type = msg.type ?? NotificationType.Info;
+
+                        if (mode is "Popup" or "Popup + Windows")
+                        {
+                            _popupForm.Invoke(() => _popupForm.ShowPopup(
+                                title, message, type,
+                                msg.sessionId ?? "",
+                                msg.cwd ?? ""));
+                        }
+
+                        if (mode is "Windows" or "Popup + Windows")
+                        {
+                            _popupForm.Invoke(() => ShowWindowsNotification(title, message, type));
+                        }
                     }
                 }
             }
