@@ -98,14 +98,14 @@ static class Program
         if (!isNew)
         {
             // Already running — tell existing instance to bring itself to front
-            SendToPipe("ProdToy", "DevToy is ready.", NotificationType.Info);
+            SendToPipe("ProdToy", "ProdToy is ready.", NotificationType.Info);
             return;
         }
 
         // Load last history entry or show a default welcome
         var latest = ResponseHistory.GetLatest();
         string title = latest?.Title ?? "ProdToy";
-        string message = latest?.Message ?? "No notifications yet. DevToy will notify you here.";
+        string message = latest?.Message ?? "No notifications yet. ProdToy will notify you here.";
         string type = latest?.Type ?? NotificationType.Info;
         string sessionId = latest?.SessionId ?? "";
         string cwd = latest?.Cwd ?? "";

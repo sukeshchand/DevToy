@@ -29,7 +29,7 @@ class SetupForm : Form
 
     public SetupForm()
     {
-        Text = "DevToy - Setup Instructions";
+        Text = "ProdToy - Setup Instructions";
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = true;
         MinimizeBox = true;
@@ -48,7 +48,7 @@ class SetupForm : Form
         _currentExePath = Application.ExecutablePath;
 
         string hooksDirJsonEscaped = _hooksDir.Replace("\\", "\\\\");
-        _hookCommand = $"powershell.exe -ExecutionPolicy Bypass -File \\\"{hooksDirJsonEscaped}\\\\Show-DevToy.ps1\\\"";
+        _hookCommand = $"powershell.exe -ExecutionPolicy Bypass -File \\\"{hooksDirJsonEscaped}\\\\Show-ProdToy.ps1\\\"";
 
         _ps1Content = BuildPs1Content(_installExePath);
 
@@ -63,7 +63,7 @@ class SetupForm : Form
 
         var titleLabel = new Label
         {
-            Text = "DevToy Setup",
+            Text = "ProdToy Setup",
             Font = new Font("Segoe UI Semibold", 18f, FontStyle.Bold),
             ForeColor = _theme.TextPrimary,
             AutoSize = true,
@@ -128,7 +128,7 @@ class SetupForm : Form
 
             try
             {
-                _webView2UserDataFolder = Path.Combine(Path.GetTempPath(), "DevToy_Setup_" + Guid.NewGuid().ToString("N"));
+                _webView2UserDataFolder = Path.Combine(Path.GetTempPath(), "ProdToy_Setup_" + Guid.NewGuid().ToString("N"));
                 var env = await CoreWebView2Environment.CreateAsync(null, _webView2UserDataFolder);
                 await webView.EnsureCoreWebView2Async(env);
                 webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
@@ -233,7 +233,7 @@ class SetupForm : Form
 
             // Step 3: Create hooks directory and write PS1 script
             Directory.CreateDirectory(_hooksDir);
-            string ps1Path = Path.Combine(_hooksDir, "Show-DevToy.ps1");
+            string ps1Path = Path.Combine(_hooksDir, "Show-ProdToy.ps1");
             File.WriteAllText(ps1Path, _ps1Content, Encoding.UTF8);
             log.AppendLine($"Hook script created at {ps1Path}");
 
@@ -352,7 +352,7 @@ class SetupForm : Form
                 {
                     foreach (var hook in hooksArray)
                     {
-                        if (hook?["command"]?.GetValue<string>()?.Contains("Show-DevToy") == true)
+                        if (hook?["command"]?.GetValue<string>()?.Contains("Show-ProdToy") == true)
                         {
                             alreadyExists = true;
                             break;
@@ -421,7 +421,7 @@ if ($inputJson) {{
         if ($payload.cwd)        {{ $cwd = $payload.cwd }}
 
         if ($payload.hook_event_name -eq ""UserPromptSubmit"") {{
-            # Save question to history via DevToy and exit
+            # Save question to history via ProdToy and exit
             if ($payload.prompt) {{
                 $qFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), ""devtoy_question.txt"")
                 [System.IO.File]::WriteAllText($qFile, $payload.prompt, [System.Text.Encoding]::UTF8)
@@ -438,7 +438,7 @@ if ($inputJson) {{
             $type = ""info""
         }}
         elseif ($payload.hook_event_name -eq ""Stop"") {{
-            $title = ""DevToy - Done""
+            $title = ""ProdToy - Done""
             if ($payload.last_assistant_message) {{
                 $message = $payload.last_assistant_message
             }} else {{
@@ -471,7 +471,7 @@ Start-Process -FilePath $exePath -ArgumentList $argList -WindowStyle Hidden";
         ""hooks"": [
           {
             ""type"": ""command"",
-            ""command"": ""powershell.exe -ExecutionPolicy Bypass -File \""HOOKS_DIR_PLACEHOLDER\\Show-DevToy.ps1\""""
+            ""command"": ""powershell.exe -ExecutionPolicy Bypass -File \""HOOKS_DIR_PLACEHOLDER\\Show-ProdToy.ps1\""""
           }
         ]
       }
@@ -482,7 +482,7 @@ Start-Process -FilePath $exePath -ArgumentList $argList -WindowStyle Hidden";
         ""hooks"": [
           {
             ""type"": ""command"",
-            ""command"": ""powershell.exe -ExecutionPolicy Bypass -File \""HOOKS_DIR_PLACEHOLDER\\Show-DevToy.ps1\""""
+            ""command"": ""powershell.exe -ExecutionPolicy Bypass -File \""HOOKS_DIR_PLACEHOLDER\\Show-ProdToy.ps1\""""
           }
         ]
       }
@@ -678,7 +678,7 @@ Copy-Item -Path ""{currentExePath}"" -Destination ""{installExePath}"" -Force";
 <p style=""color: #6888b8;"">If you prefer to set things up manually, follow these steps:</p>
 
 <h2><span class=""step"">1</span> Install the executable</h2>
-<p>Copy DevToy to <span class=""path"">{WebUtility.HtmlEncode(toolsDir)}</span>:</p>
+<p>Copy ProdToy to <span class=""path"">{WebUtility.HtmlEncode(toolsDir)}</span>:</p>
 <div class=""code-block"">
     <div class=""code-header"">
         <span class=""lang"">PowerShell</span>
@@ -691,7 +691,7 @@ Copy-Item -Path ""{currentExePath}"" -Destination ""{installExePath}"" -Force";
 <hr class=""divider""/>
 
 <h2><span class=""step"">2</span> Create the PowerShell hook script</h2>
-<p>Save this file as: <span class=""path"">{WebUtility.HtmlEncode(hooksDir)}\\Show-DevToy.ps1</span></p>
+<p>Save this file as: <span class=""path"">{WebUtility.HtmlEncode(hooksDir)}\\Show-ProdToy.ps1</span></p>
 <div class=""code-block"">
     <div class=""code-header"">
         <span class=""lang"">PowerShell</span>
@@ -702,7 +702,7 @@ Copy-Item -Path ""{currentExePath}"" -Destination ""{installExePath}"" -Force";
 
 <hr class=""divider""/>
 
-<h2><span class=""step"">3</span> Configure DevToy hooks</h2>
+<h2><span class=""step"">3</span> Configure ProdToy hooks</h2>
 <p>Add this to your settings file: <span class=""path"">{WebUtility.HtmlEncode(settingsPath)}</span></p>
 <div class=""info-box"">
     <span class=""label"">Tip:</span> If you already have hooks configured, merge the <code>Stop</code> and <code>Notification</code> entries into your existing <code>hooks</code> object.
@@ -724,7 +724,7 @@ Copy-Item -Path ""{currentExePath}"" -Destination ""{installExePath}"" -Force";
         <span class=""lang"">PowerShell</span>
         <button class=""copy-btn"" onclick=""copyBlock(this)"">Copy</button>
     </div>
-    <pre>& ""{WebUtility.HtmlEncode(installExePath)}"" --title ""Test"" --message ""Hello from DevToy!"" --type success</pre>
+    <pre>& ""{WebUtility.HtmlEncode(installExePath)}"" --title ""Test"" --message ""Hello from ProdToy!"" --type success</pre>
 </div>
 
 <hr class=""divider""/>
@@ -734,7 +734,7 @@ Copy-Item -Path ""{currentExePath}"" -Destination ""{installExePath}"" -Force";
     <div class=""usage-card"">
         <div class=""flag"">--title, -t</div>
         <div class=""desc"">Window title text</div>
-        <div class=""vals"">Default: &quot;DevToy&quot;</div>
+        <div class=""vals"">Default: &quot;ProdToy&quot;</div>
     </div>
     <div class=""usage-card"">
         <div class=""flag"">--message, -m</div>

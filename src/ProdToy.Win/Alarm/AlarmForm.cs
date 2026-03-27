@@ -11,7 +11,7 @@ class AlarmForm : Form
     {
         _theme = theme;
 
-        Text = "DevToy \u2014 Alarms";
+        Text = "ProdToy \u2014 Alarms";
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = true;
         MinimizeBox = true;

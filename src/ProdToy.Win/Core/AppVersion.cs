@@ -2,5 +2,5 @@ namespace ProdToy;
 
 static class AppVersion
 {
-    public const string Current = "1.0.128";
+    public const string Current = "1.0.129";
 }

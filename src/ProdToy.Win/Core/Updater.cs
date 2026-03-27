@@ -15,14 +15,14 @@ static class Updater
             if (string.IsNullOrWhiteSpace(settings.UpdateLocation))
                 return new UpdateResult(false, "No update location configured.");
 
-            string sourceExe = Path.Combine(settings.UpdateLocation, "DevToy.exe");
+            string sourceExe = Path.Combine(settings.UpdateLocation, "ProdToy.exe");
             if (!File.Exists(sourceExe))
                 return new UpdateResult(false, $"Update file not found at {sourceExe}");
 
             string installDir = Path.GetDirectoryName(Application.ExecutablePath)!;
             string currentExe = Application.ExecutablePath;
             string currentExeName = Path.GetFileName(currentExe);
-            string updateExe = Path.Combine(installDir, "DevToy.update.exe");
+            string updateExe = Path.Combine(installDir, "ProdToy.update.exe");
             string scriptPath = Path.Combine(installDir, "_update.ps1");
             int currentPid = Environment.ProcessId;
 
@@ -31,7 +31,7 @@ static class Updater
 
             // Step 2: Write the updater PowerShell script
             string ps1 = $@"
-# DevToy Auto-Updater
+# ProdToy Auto-Updater
 # Wait for the original process to exit, then swap the exe and relaunch.
 
 $exePath   = '{currentExe.Replace("'", "''")}'
@@ -111,7 +111,7 @@ Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue
         try
         {
             string hooksDir = AppPaths.ClaudeHooksDir;
-            string ps1Path = Path.Combine(hooksDir, "Show-DevToy.ps1");
+            string ps1Path = Path.Combine(hooksDir, "Show-ProdToy.ps1");
 
             Directory.CreateDirectory(hooksDir);
 
@@ -135,7 +135,7 @@ if ($inputJson) {{
         if ($payload.cwd)        {{ $cwd = $payload.cwd }}
 
         if ($payload.hook_event_name -eq ""UserPromptSubmit"") {{
-            # Save question to history via DevToy and exit
+            # Save question to history via ProdToy and exit
             if ($payload.prompt) {{
                 $qFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), ""devtoy_question.txt"")
                 [System.IO.File]::WriteAllText($qFile, $payload.prompt, [System.Text.Encoding]::UTF8)
@@ -152,7 +152,7 @@ if ($inputJson) {{
             $type = ""info""
         }}
         elseif ($payload.hook_event_name -eq ""Stop"") {{
-            $title = ""DevToy - Done""
+            $title = ""ProdToy - Done""
             if ($payload.last_assistant_message) {{
                 $message = $payload.last_assistant_message
             }} else {{

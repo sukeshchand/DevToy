@@ -7,8 +7,8 @@ namespace ProdToy;
 
 static class ClaudeHookManager
 {
-    private const string AutoTitleMarkerStart = "<!-- DevToy:AutoTitle:Start -->";
-    private const string AutoTitleMarkerEnd = "<!-- DevToy:AutoTitle:End -->";
+    private const string AutoTitleMarkerStart = "<!-- ProdToy:AutoTitle:Start -->";
+    private const string AutoTitleMarkerEnd = "<!-- ProdToy:AutoTitle:End -->";
 
     private static string ClaudeMdPath => AppPaths.ClaudeMdFile;
 

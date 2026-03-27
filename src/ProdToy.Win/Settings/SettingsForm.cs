@@ -816,7 +816,7 @@ class SettingsForm : Form
 
         var uninstallDesc = new Label
         {
-            Text = "Remove DevToy from the tools folder and clean up hook\nentries from Claude Code settings. Your response history\nand app settings will be preserved.",
+            Text = "Remove ProdToy from the tools folder and clean up hook\nentries from Claude Code settings. Your response history\nand app settings will be preserved.",
             Font = new Font("Segoe UI", 9f),
             ForeColor = currentTheme.TextSecondary,
             AutoSize = true,
@@ -828,7 +828,7 @@ class SettingsForm : Form
 
         var uninstallButton = new RoundedButton
         {
-            Text = "Uninstall DevToy",
+            Text = "Uninstall ProdToy",
             Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
             Size = new Size(200, 34),
             Location = new Point(tp, uy),
@@ -845,7 +845,7 @@ class SettingsForm : Form
         uninstallButton.Click += (_, _) =>
         {
             var confirm = MessageBox.Show(this,
-                "This will remove DevToy from the tools folder and remove the hook entries from Claude Code settings.\n\n" +
+                "This will remove ProdToy from the tools folder and remove the hook entries from Claude Code settings.\n\n" +
                 "Your response history and app settings will be kept.\n\n" +
                 "Are you sure you want to uninstall?",
                 "Confirm Uninstall",
@@ -890,7 +890,7 @@ class SettingsForm : Form
         // --- Version info ---
         var aboutVersionLabel = new Label
         {
-            Text = $"DevToy v{AppVersion.Current}",
+            Text = $"ProdToy v{AppVersion.Current}",
             Font = new Font("Segoe UI Semibold", 14f, FontStyle.Bold),
             ForeColor = currentTheme.TextPrimary,
             AutoSize = true,
@@ -1064,7 +1064,7 @@ class SettingsForm : Form
         // --- Bottom version label on form ---
         _versionLabel = new Label
         {
-            Text = $"DevToy v{AppVersion.Current}",
+            Text = $"ProdToy v{AppVersion.Current}",
             Font = new Font("Segoe UI", 8f),
             ForeColor = Color.FromArgb(60, 75, 105),
             AutoSize = true,

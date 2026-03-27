@@ -409,7 +409,7 @@ class PopupForm : Form
     {
         try
         {
-            _webView2UserDataFolder = Path.Combine(Path.GetTempPath(), "DevToy_" + Environment.ProcessId);
+            _webView2UserDataFolder = Path.Combine(Path.GetTempPath(), "ProdToy_" + Environment.ProcessId);
             var env = await CoreWebView2Environment.CreateAsync(null, _webView2UserDataFolder);
             await _messageWebView.EnsureCoreWebView2Async(env);
             _messageWebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;

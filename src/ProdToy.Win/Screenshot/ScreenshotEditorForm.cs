@@ -21,7 +21,7 @@ class ScreenshotEditorForm : Form
         InitEditFolder(_session, capturedImage);
         _theme = Themes.LoadSaved();
 
-        Text = "DevToy \u2014 Screenshot Editor";
+        Text = "ProdToy \u2014 Screenshot Editor";
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = true;
         MinimizeBox = true;
@@ -401,7 +401,7 @@ class ScreenshotEditorForm : Form
             _toolbar.Invalidate();
             _recentPanel.SetEditingId(_session.EditId);
 
-            Text = $"DevToy \u2014 {Path.GetFileName(filePath)}";
+            Text = $"ProdToy \u2014 {Path.GetFileName(filePath)}";
         }
         catch (Exception ex)
         {

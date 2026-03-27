@@ -249,7 +249,7 @@ class PopupAppContext : ApplicationContext
         {
             var remaining = _popupForm.SnoozeUntil - DateTime.Now;
             int mins = Math.Max(1, (int)remaining.TotalMinutes);
-            _trayIcon.Text = $"DevToy (snoozed {mins}m)";
+            _trayIcon.Text = $"ProdToy (snoozed {mins}m)";
         }
         else
         {

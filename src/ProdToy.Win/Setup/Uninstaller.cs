@@ -27,7 +27,7 @@ static class Uninstaller
         try
         {
             // Step 1: Remove hook script
-            string ps1Path = Path.Combine(hooksDir, "Show-DevToy.ps1");
+            string ps1Path = Path.Combine(hooksDir, "Show-ProdToy.ps1");
             if (File.Exists(ps1Path))
             {
                 File.Delete(ps1Path);
@@ -38,7 +38,7 @@ static class Uninstaller
                 log.AppendLine("Hook script not found (already removed).");
             }
 
-            // Step 2: Remove DevToy hooks from settings.json
+            // Step 2: Remove ProdToy hooks from settings.json
             if (File.Exists(settingsPath))
             {
                 RemoveHooksFromSettings(settingsPath);
@@ -83,7 +83,7 @@ static class Uninstaller
             File.WriteAllText(cleanupBatPath, batLines.ToString(), Encoding.ASCII);
 
             log.AppendLine();
-            log.Append("DevToy has been uninstalled. Please restart any running Claude Code instances.");
+            log.Append("ProdToy has been uninstalled. Please restart any running Claude Code instances.");
 
             return new UninstallResult(true, log.ToString());
         }
@@ -126,11 +126,11 @@ static class Uninstaller
             {
                 if (eventArray[i]?["hooks"] is not JsonArray hooksArray) continue;
 
-                // Remove any hook entries that reference Show-DevToy
+                // Remove any hook entries that reference Show-ProdToy
                 for (int j = hooksArray.Count - 1; j >= 0; j--)
                 {
                     string? command = hooksArray[j]?["command"]?.GetValue<string>();
-                    if (command != null && command.Contains("Show-DevToy"))
+                    if (command != null && command.Contains("Show-ProdToy"))
                     {
                         hooksArray.RemoveAt(j);
                     }
