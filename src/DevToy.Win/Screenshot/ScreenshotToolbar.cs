@@ -55,8 +55,8 @@ class ScreenshotToolbar : Control
         _items.Clear();
 
         // Primary actions — most used, visually distinct
-        _items.Add(new ToolbarPrimaryButton("quickcopy", "\uD83D\uDCCB", "Copy", "Copy to Clipboard (Ctrl+C)", () => QuickCopyRequested?.Invoke()));
-        _items.Add(new ToolbarPrimaryButton("copypath", "\uD83D\uDCCE", "Path", "Save & Copy Path (Ctrl+Shift+C)", () => CopyPathRequested?.Invoke()));
+        _items.Add(new ToolbarPrimaryButton("quickcopy", "\u2398", "Copy", "Copy to Clipboard (Ctrl+C)", () => QuickCopyRequested?.Invoke()));
+        _items.Add(new ToolbarPrimaryButton("copypath", "\u29C9", "Path", "Save & Copy Path (Ctrl+Shift+C)", () => CopyPathRequested?.Invoke()));
         AddSeparator();
 
         // Tools
@@ -100,9 +100,9 @@ class ScreenshotToolbar : Control
         AddSeparator();
 
         // Actions
-        AddButton("save", "\uD83D\uDCBE", "Save (Ctrl+S)", () => SaveRequested?.Invoke());
-        AddButton("saveas", "\uD83D\uDCC2", "Save As (Ctrl+Shift+S)", () => SaveAsRequested?.Invoke());
-        AddButton("copy", "\uD83D\uDCCB", "Copy (Ctrl+C)", () => CopyRequested?.Invoke());
+        AddButton("save", "\u2713", "Save (Ctrl+S)", () => SaveRequested?.Invoke());
+        AddButton("saveas", "\u22EF", "Save As (Ctrl+Shift+S)", () => SaveAsRequested?.Invoke());
+        AddButton("copy", "\u2398", "Copy (Ctrl+C)", () => CopyRequested?.Invoke());
         AddSeparator();
         AddButton("cancel", "\u2715", "Close (Esc)", () => CancelRequested?.Invoke());
 
@@ -337,7 +337,7 @@ class ScreenshotToolbar : Control
                 _ => Color.FromArgb(200, 220, 220, 230),
             };
 
-            using var font = new Font("Segoe UI", Id == "text" ? 13f : 11f, Id == "text" ? FontStyle.Bold : FontStyle.Regular);
+            using var font = new Font("Segoe UI Symbol", Id == "text" ? 13f : 11f, Id == "text" ? FontStyle.Bold : FontStyle.Regular);
             using var brush = new SolidBrush(textColor);
             using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             g.DrawString(Icon, font, brush, rect, sf);
@@ -394,7 +394,7 @@ class ScreenshotToolbar : Control
             g.DrawPath(borderPen, bgPath);
 
             // Icon + label stacked
-            using var iconFont = new Font("Segoe UI", 11f);
+            using var iconFont = new Font("Segoe UI Symbol", 11f);
             using var labelFont = new Font("Segoe UI", 7f, FontStyle.Bold);
             using var textBrush = new SolidBrush(Color.White);
 

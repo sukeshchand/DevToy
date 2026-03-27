@@ -12,6 +12,9 @@ class PopupAppContext : ApplicationContext
     private readonly CancellationTokenSource _cts = new();
     private Icon _appIcon;
     private SettingsForm? _settingsForm;
+    private readonly GlobalHotkey _globalHotkey;
+    private readonly ToolStripItem _takeScreenshotItem;
+    private readonly ToolStripItem _editScreenshotItem;
 
     public PopupAppContext(string initialTitle, string initialMessage, string initialType, string sessionId = "", string cwd = "")
     {
@@ -24,12 +27,16 @@ class PopupAppContext : ApplicationContext
         _popupForm = new PopupForm(theme);
         _popupForm.ShowPopup(initialTitle, initialMessage, initialType, sessionId, cwd);
 
+        var trayMenu = BuildTrayMenu();
+        _takeScreenshotItem = trayMenu.Items[2];
+        _editScreenshotItem = trayMenu.Items[3];
+
         _trayIcon = new NotifyIcon
         {
             Icon = _appIcon,
             Text = "DevToy",
             Visible = true,
-            ContextMenuStrip = BuildTrayMenu(),
+            ContextMenuStrip = trayMenu,
         };
         _trayIcon.DoubleClick += (_, _) => _popupForm.BringToForeground();
 
@@ -37,6 +44,13 @@ class PopupAppContext : ApplicationContext
 
         // Exit when popup requests it (e.g. after update)
         _popupForm.ExitRequested += () => ExitApp();
+
+        // Register global screenshot hotkey (only if capture is enabled)
+        _globalHotkey = new GlobalHotkey();
+        _globalHotkey.HotkeyPressed += () => _popupForm.Invoke(TakeScreenshot);
+        var appSettings = AppSettings.Load();
+        if (appSettings.ScreenshotEnabled && !string.IsNullOrEmpty(appSettings.ScreenshotHotkey))
+            _globalHotkey.Register(appSettings.ScreenshotHotkey);
 
         // Start update checker
         UpdateChecker.UpdateAvailable += metadata =>
@@ -48,11 +62,14 @@ class PopupAppContext : ApplicationContext
 
     private ContextMenuStrip BuildTrayMenu()
     {
+        bool captureEnabled = AppSettings.Load().ScreenshotEnabled;
         var menu = new ContextMenuStrip();
         menu.Items.Add("Show Last Notification", null, (_, _) => _popupForm.BringToForeground());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Take Screenshot", null, (_, _) => TakeScreenshot());
         menu.Items.Add("Edit Last Screenshot", null, (_, _) => EditLastScreenshot());
+        menu.Items[2].Visible = captureEnabled;
+        menu.Items[3].Visible = captureEnabled;
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Settings...", null, (_, _) => ShowSettingsForm());
         menu.Items.Add(new ToolStripSeparator());
@@ -175,6 +192,26 @@ class PopupAppContext : ApplicationContext
             UpdateTrayText();
         };
 
+        _settingsForm.ScreenshotEnabledChanged += enabled =>
+        {
+            _takeScreenshotItem.Visible = enabled;
+            _editScreenshotItem.Visible = enabled;
+            _globalHotkey.Unregister();
+            if (enabled)
+            {
+                var hk = AppSettings.Load().ScreenshotHotkey;
+                if (!string.IsNullOrEmpty(hk))
+                    _globalHotkey.Register(hk);
+            }
+        };
+
+        _settingsForm.ScreenshotHotkeyChanged += hotkey =>
+        {
+            _globalHotkey.Unregister();
+            if (AppSettings.Load().ScreenshotEnabled && !string.IsNullOrEmpty(hotkey))
+                _globalHotkey.Register(hotkey);
+        };
+
         _settingsForm.UninstallRequested += () => ExitApp();
 
         _popupForm.SnoozeChanged += UpdateTrayText;
@@ -206,6 +243,7 @@ class PopupAppContext : ApplicationContext
     {
         _cts.Cancel();
         UpdateChecker.Stop();
+        _globalHotkey.Dispose();
         _settingsForm?.Close();
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
@@ -232,7 +270,7 @@ class PopupAppContext : ApplicationContext
                 if (!string.IsNullOrEmpty(json))
                 {
                     var msg = JsonSerializer.Deserialize<PipeMessage>(json);
-                    if (msg != null)
+                    if (msg != null && AppSettings.Load().NotificationsEnabled)
                     {
                         _popupForm.Invoke(() => _popupForm.ShowPopup(
                             msg.title ?? "DevToy",

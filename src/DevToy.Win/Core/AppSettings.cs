@@ -12,6 +12,9 @@ record AppSettingsData
     [JsonPropertyName("historyEnabled")]
     public bool HistoryEnabled { get; init; } = true;
 
+    [JsonPropertyName("notificationsEnabled")]
+    public bool NotificationsEnabled { get; init; } = true;
+
     [JsonPropertyName("showQuotes")]
     public bool ShowQuotes { get; init; } = true;
 
@@ -31,6 +34,12 @@ record AppSettingsData
     [JsonPropertyName("slShowMode")] public bool SlShowMode { get; init; } = true;
     [JsonPropertyName("slShowVersion")] public bool SlShowVersion { get; init; } = true;
     [JsonPropertyName("slShowEditStats")] public bool SlShowEditStats { get; init; } = true;
+
+    [JsonPropertyName("screenshotEnabled")]
+    public bool ScreenshotEnabled { get; init; } = false;
+
+    [JsonPropertyName("screenshotHotkey")]
+    public string ScreenshotHotkey { get; init; } = "Ctrl+Q";
 
     [JsonPropertyName("screenshotLastColor")]
     public string ScreenshotLastColor { get; init; } = "Red";

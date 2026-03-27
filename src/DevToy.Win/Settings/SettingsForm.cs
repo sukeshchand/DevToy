@@ -20,6 +20,8 @@ class SettingsForm : Form
     public event Action<bool>? SnoozeChanged;
     public event Action<bool>? ShowQuotesChanged;
     public event Action? UninstallRequested;
+    public event Action<string>? ScreenshotHotkeyChanged;
+    public event Action<bool>? ScreenshotEnabledChanged;
 
     public SettingsForm(PopupTheme currentTheme, DateTime snoozeUntil)
     {
@@ -66,7 +68,7 @@ class SettingsForm : Form
         y += 8;
 
         // --- TabControl (owner-drawn) ---
-        int tabCount = 5;
+        int tabCount = 6;
         int tabWidth = contentWidth / tabCount;
         _tabControl = new ThemedTabControl(currentTheme)
         {
@@ -100,7 +102,212 @@ class SettingsForm : Form
         generalPage.Controls.Add(generalPlaceholder);
 
         // =============================================
-        // TAB 1: Appearance
+        // TAB 1: Screen Capture
+        // =============================================
+        var capturePage = CreateTabPage("Capture", currentTheme);
+        _tabControl.TabPages.Add(capturePage);
+
+        int sc = tp;
+
+        var captureSettings = AppSettings.Load();
+        bool captureEnabled = captureSettings.ScreenshotEnabled;
+
+        var enableCaptureLabel = CreateSectionLabel("SCREEN CAPTURE", tp, sc);
+        capturePage.Controls.Add(enableCaptureLabel);
+        sc += 26;
+
+        var captureHotkeyControls = new List<Control>();
+
+        var enableCaptureCheck = new CheckBox
+        {
+            Text = "Enable screen capture",
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = currentTheme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = captureEnabled,
+            AutoSize = true,
+            Location = new Point(tp, sc),
+            Cursor = Cursors.Hand,
+        };
+        capturePage.Controls.Add(enableCaptureCheck);
+        sc += 32;
+
+        capturePage.Controls.Add(CreateSeparator(tp, sc, tabInner));
+        sc += 14;
+
+        var captureShortcutLabel = CreateSectionLabel("SHORTCUT KEY", tp, sc);
+        capturePage.Controls.Add(captureShortcutLabel);
+        captureHotkeyControls.Add(captureShortcutLabel);
+        sc += 26;
+
+        var captureShortcutHint = new Label
+        {
+            Text = "Global hotkey to start screen capture:",
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = currentTheme.TextPrimary,
+            AutoSize = true,
+            Location = new Point(tp, sc),
+            BackColor = Color.Transparent,
+        };
+        capturePage.Controls.Add(captureShortcutHint);
+        captureHotkeyControls.Add(captureShortcutHint);
+        sc += 24;
+
+        var currentHotkey = captureSettings.ScreenshotHotkey;
+        var hotkeyBox = new TextBox
+        {
+            Text = currentHotkey,
+            Font = new Font("Segoe UI Semibold", 11f, FontStyle.Bold),
+            ForeColor = currentTheme.Primary,
+            BackColor = currentTheme.BgHeader,
+            BorderStyle = BorderStyle.FixedSingle,
+            Size = new Size(260, 30),
+            Location = new Point(tp, sc),
+            ReadOnly = true,
+            TextAlign = HorizontalAlignment.Center,
+            Cursor = Cursors.Hand,
+        };
+
+        bool hotkeyRecording = false;
+        var hotkeyRecordButton = new RoundedButton
+        {
+            Text = "Change",
+            Font = new Font("Segoe UI", 8.5f),
+            Size = new Size(80, 30),
+            Location = new Point(tp + 268, sc),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = currentTheme.PrimaryDim,
+            ForeColor = currentTheme.TextSecondary,
+            Cursor = Cursors.Hand,
+        };
+        hotkeyRecordButton.FlatAppearance.BorderSize = 0;
+        hotkeyRecordButton.FlatAppearance.MouseOverBackColor = currentTheme.Primary;
+
+        var hotkeyClearButton = new RoundedButton
+        {
+            Text = "Clear",
+            Font = new Font("Segoe UI", 8.5f),
+            Size = new Size(60, 30),
+            Location = new Point(tp + 356, sc),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = currentTheme.PrimaryDim,
+            ForeColor = currentTheme.TextSecondary,
+            Cursor = Cursors.Hand,
+        };
+        hotkeyClearButton.FlatAppearance.BorderSize = 0;
+        hotkeyClearButton.FlatAppearance.MouseOverBackColor = currentTheme.Primary;
+
+        var hotkeyStatusLabel = new Label
+        {
+            Text = "",
+            Font = new Font("Segoe UI", 8.5f),
+            ForeColor = currentTheme.TextSecondary,
+            AutoSize = true,
+            Location = new Point(tp, sc + 38),
+            BackColor = Color.Transparent,
+        };
+
+        hotkeyRecordButton.Click += (_, _) =>
+        {
+            if (!hotkeyRecording)
+            {
+                hotkeyRecording = true;
+                hotkeyBox.Text = "Press a key combination...";
+                hotkeyBox.ForeColor = currentTheme.TextSecondary;
+                hotkeyRecordButton.Text = "Cancel";
+                hotkeyStatusLabel.Text = "Press modifier(s) + key, e.g. Ctrl+Shift+S";
+            }
+            else
+            {
+                hotkeyRecording = false;
+                hotkeyBox.Text = AppSettings.Load().ScreenshotHotkey;
+                hotkeyBox.ForeColor = currentTheme.Primary;
+                hotkeyRecordButton.Text = "Change";
+                hotkeyStatusLabel.Text = "";
+            }
+        };
+
+        hotkeyBox.KeyDown += (_, e) =>
+        {
+            if (!hotkeyRecording) return;
+            e.SuppressKeyPress = true;
+
+            // Ignore modifier-only presses
+            if (e.KeyCode is Keys.ControlKey or Keys.ShiftKey or Keys.Menu or Keys.LMenu
+                or Keys.RMenu or Keys.LControlKey or Keys.RControlKey or Keys.LShiftKey
+                or Keys.RShiftKey or Keys.LWin or Keys.RWin)
+                return;
+
+            // Require at least one modifier
+            if (!e.Control && !e.Shift && !e.Alt)
+            {
+                hotkeyStatusLabel.ForeColor = currentTheme.ErrorColor;
+                hotkeyStatusLabel.Text = "At least one modifier (Ctrl, Shift, Alt) is required";
+                return;
+            }
+
+            var parts = new List<string>();
+            if (e.Control) parts.Add("Ctrl");
+            if (e.Alt) parts.Add("Alt");
+            if (e.Shift) parts.Add("Shift");
+            parts.Add(e.KeyCode.ToString());
+
+            string hotkey = string.Join("+", parts);
+            hotkeyBox.Text = hotkey;
+            hotkeyBox.ForeColor = currentTheme.Primary;
+            hotkeyRecording = false;
+            hotkeyRecordButton.Text = "Change";
+
+            var settings = AppSettings.Load();
+            AppSettings.Save(settings with { ScreenshotHotkey = hotkey });
+            hotkeyStatusLabel.ForeColor = currentTheme.SuccessColor;
+            hotkeyStatusLabel.Text = "Hotkey saved — active now";
+            ScreenshotHotkeyChanged?.Invoke(hotkey);
+        };
+
+        hotkeyClearButton.Click += (_, _) =>
+        {
+            hotkeyRecording = false;
+            hotkeyBox.Text = "(none)";
+            hotkeyBox.ForeColor = currentTheme.TextSecondary;
+            hotkeyRecordButton.Text = "Change";
+
+            var settings = AppSettings.Load();
+            AppSettings.Save(settings with { ScreenshotHotkey = "" });
+            hotkeyStatusLabel.ForeColor = currentTheme.TextSecondary;
+            hotkeyStatusLabel.Text = "Hotkey cleared";
+            ScreenshotHotkeyChanged?.Invoke("");
+        };
+
+        if (string.IsNullOrEmpty(currentHotkey))
+        {
+            hotkeyBox.Text = "(none)";
+            hotkeyBox.ForeColor = currentTheme.TextSecondary;
+        }
+
+        capturePage.Controls.Add(hotkeyBox);
+        capturePage.Controls.Add(hotkeyRecordButton);
+        capturePage.Controls.Add(hotkeyClearButton);
+        capturePage.Controls.Add(hotkeyStatusLabel);
+        captureHotkeyControls.AddRange(new Control[] { hotkeyBox, hotkeyRecordButton, hotkeyClearButton, hotkeyStatusLabel });
+
+        // Set initial enabled state for hotkey controls
+        foreach (var ctrl in captureHotkeyControls)
+            ctrl.Enabled = captureEnabled;
+
+        enableCaptureCheck.CheckedChanged += (_, _) =>
+        {
+            bool enabled = enableCaptureCheck.Checked;
+            foreach (var ctrl in captureHotkeyControls)
+                ctrl.Enabled = enabled;
+
+            var s = AppSettings.Load();
+            AppSettings.Save(s with { ScreenshotEnabled = enabled });
+            ScreenshotEnabledChanged?.Invoke(enabled);
+        };
+
+        // =============================================
+        // TAB 2: Appearance
         // =============================================
         var appearancePage = CreateTabPage("Appearance", currentTheme);
         _tabControl.TabPages.Add(appearancePage);
@@ -157,17 +364,39 @@ class SettingsForm : Form
         appearancePage.Controls.Add(_themePreview);
 
         // =============================================
-        // TAB 2: Claude CLI
+        // TAB 3: Claude CLI
         // =============================================
         var claudePage = CreateTabPage("Claude CLI", currentTheme);
         _tabControl.TabPages.Add(claudePage);
 
         int cy = tp;
 
-        // --- Notifications group ---
-        var notifLabel = CreateSectionLabel("NOTIFICATIONS", tp, cy);
+        // --- Conversations main heading ---
+        var conversationsLabel = CreateSectionLabel("CONVERSATIONS", tp, cy);
+        claudePage.Controls.Add(conversationsLabel);
+        cy += 28;
+
+        // --- Notifications sub-group ---
+        var notifLabel = CreateSubSectionLabel("Notifications", tp, cy, currentTheme);
         claudePage.Controls.Add(notifLabel);
-        cy += 26;
+        cy += 22;
+
+        bool notifEnabled = AppSettings.Load().NotificationsEnabled;
+        var notifEnabledCheck = new CheckBox
+        {
+            Text = "Enable notifications",
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = currentTheme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = notifEnabled,
+            AutoSize = true,
+            Location = new Point(tp + 8, cy),
+            Cursor = Cursors.Hand,
+        };
+        claudePage.Controls.Add(notifEnabledCheck);
+        cy += 28;
+
+        var notifSubControls = new List<Control>();
 
         var quotesCheck = new CheckBox
         {
@@ -176,8 +405,9 @@ class SettingsForm : Form
             ForeColor = currentTheme.TextPrimary,
             BackColor = Color.Transparent,
             Checked = AppSettings.Load().ShowQuotes,
+            Enabled = notifEnabled,
             AutoSize = true,
-            Location = new Point(tp, cy),
+            Location = new Point(tp + 8, cy),
             Cursor = Cursors.Hand,
         };
         quotesCheck.CheckedChanged += (_, _) =>
@@ -187,6 +417,7 @@ class SettingsForm : Form
             ShowQuotesChanged?.Invoke(quotesCheck.Checked);
         };
         claudePage.Controls.Add(quotesCheck);
+        notifSubControls.Add(quotesCheck);
         cy += 28;
 
         bool isSnoozed = DateTime.Now < snoozeUntil;
@@ -199,8 +430,9 @@ class SettingsForm : Form
             ForeColor = currentTheme.TextPrimary,
             BackColor = Color.Transparent,
             Checked = isSnoozed,
+            Enabled = notifEnabled,
             AutoSize = true,
-            Location = new Point(tp, cy),
+            Location = new Point(tp + 8, cy),
             Cursor = Cursors.Hand,
         };
 
@@ -243,15 +475,22 @@ class SettingsForm : Form
         FormClosed += (_, _) => { snoozeTimer.Stop(); snoozeTimer.Dispose(); };
 
         claudePage.Controls.Add(snoozeCheck);
+        notifSubControls.Add(snoozeCheck);
+
+        notifEnabledCheck.CheckedChanged += (_, _) =>
+        {
+            var s = AppSettings.Load();
+            AppSettings.Save(s with { NotificationsEnabled = notifEnabledCheck.Checked });
+            foreach (var ctrl in notifSubControls)
+                ctrl.Enabled = notifEnabledCheck.Checked;
+        };
         cy += 28;
 
-        // --- Chats group ---
-        claudePage.Controls.Add(CreateSeparator(tp, cy, tabInner));
-        cy += 10;
-
-        var chatsLabel = CreateSectionLabel("CHATS", tp, cy);
+        // --- Chats sub-group ---
+        cy += 4;
+        var chatsLabel = CreateSubSectionLabel("Chats", tp, cy, currentTheme);
         claudePage.Controls.Add(chatsLabel);
-        cy += 26;
+        cy += 22;
 
         var historyCheck = new CheckBox
         {
@@ -261,7 +500,7 @@ class SettingsForm : Form
             BackColor = Color.Transparent,
             Checked = ResponseHistory.IsEnabled,
             AutoSize = true,
-            Location = new Point(tp, cy),
+            Location = new Point(tp + 8, cy),
             Cursor = Cursors.Hand,
         };
         historyCheck.CheckedChanged += (_, _) =>
@@ -412,7 +651,7 @@ class SettingsForm : Form
         cy += (slItems.Length / 3 + 1) * 22 + 4;
 
         // =============================================
-        // TAB 3: Advanced
+        // TAB 4: Advanced
         // =============================================
         var advancedPage = CreateTabPage("Advanced", currentTheme);
         _tabControl.TabPages.Add(advancedPage);
@@ -489,7 +728,7 @@ class SettingsForm : Form
         advancedPage.Controls.Add(uninstallButton);
 
         // =============================================
-        // TAB 4: About
+        // TAB 5: About
         // =============================================
         var aboutPage = CreateTabPage("About", currentTheme);
         _tabControl.TabPages.Add(aboutPage);
@@ -808,6 +1047,19 @@ class SettingsForm : Form
                     break;
             }
         }
+    }
+
+    private static Label CreateSubSectionLabel(string text, int x, int y, PopupTheme theme)
+    {
+        return new Label
+        {
+            Text = text,
+            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+            ForeColor = theme.TextSecondary,
+            AutoSize = true,
+            Location = new Point(x + 4, y),
+            BackColor = Color.Transparent,
+        };
     }
 
     private Label CreateSectionLabel(string text, int x, int y)

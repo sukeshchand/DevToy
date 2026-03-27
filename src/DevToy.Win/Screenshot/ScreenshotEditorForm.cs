@@ -38,10 +38,12 @@ class ScreenshotEditorForm : Form
 
         int toolbarAreaHeight = 60;
         int pad = 8;
+        int extraPad = 80; // extra breathing room around the captured image
+        int recentPanelWidth = 170; // right-side recent images panel
         int imgW = capturedImage.Width;
         int imgH = capturedImage.Height;
-        int clientW = Math.Max(imgW + pad * 2, 600);
-        int clientH = imgH + toolbarAreaHeight + pad * 2;
+        int clientW = Math.Max(imgW + extraPad * 2 + recentPanelWidth, 600);
+        int clientH = imgH + toolbarAreaHeight + extraPad + pad;
         var screen = Screen.FromPoint(Cursor.Position).WorkingArea;
         clientW = Math.Min(clientW, screen.Width - 40);
         clientH = Math.Min(clientH, screen.Height - 40);
