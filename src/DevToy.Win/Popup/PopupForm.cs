@@ -348,6 +348,11 @@ class PopupForm : Form
         Shown += (_, _) => { UpdateHistoryNav(); PositionControls(); };
 
         InitializeWebView2();
+
+        // Apply saved global font
+        var savedFont = AppSettings.Load().GlobalFont;
+        if (!string.IsNullOrEmpty(savedFont) && savedFont != "Segoe UI")
+            ApplyGlobalFont(savedFont);
     }
 
     private void PositionControls()
@@ -486,6 +491,28 @@ class PopupForm : Form
         }
 
         Invalidate();
+    }
+
+    public void ApplyGlobalFont(string fontFamily)
+    {
+        try
+        {
+            SuspendLayout();
+            Font = new Font(fontFamily, Font.Size, Font.Style);
+            ApplyFontRecursive(this, fontFamily);
+            ResumeLayout();
+            Invalidate(true);
+        }
+        catch { }
+    }
+
+    private static void ApplyFontRecursive(Control control, string fontFamily)
+    {
+        foreach (Control child in control.Controls)
+        {
+            try { child.Font = new Font(fontFamily, child.Font.Size, child.Font.Style); } catch { }
+            ApplyFontRecursive(child, fontFamily);
+        }
     }
 
     private static string ToHex(Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";

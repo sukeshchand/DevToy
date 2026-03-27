@@ -21,6 +21,7 @@ class SettingsForm : Form
     public event Action<bool>? ShowQuotesChanged;
     public event Action? UninstallRequested;
     public event Action<string>? ScreenshotHotkeyChanged;
+    public event Action<string>? GlobalFontChanged;
     public event Action<bool>? ScreenshotEnabledChanged;
 
     public SettingsForm(PopupTheme currentTheme, DateTime snoozeUntil)
@@ -90,16 +91,130 @@ class SettingsForm : Form
         var generalPage = CreateTabPage("General", currentTheme);
         _tabControl.TabPages.Add(generalPage);
 
-        var generalPlaceholder = new Label
+        int gy = tp;
+
+        var fontSectionLabel = CreateSectionLabel("FONT", tp, gy);
+        generalPage.Controls.Add(fontSectionLabel);
+        gy += 28;
+
+        var fontLabel = new Label
         {
-            Text = "More settings coming soon.",
-            Font = new Font("Segoe UI", 9.5f),
-            ForeColor = currentTheme.TextSecondary,
+            Text = "Global font:",
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = currentTheme.TextPrimary,
             AutoSize = true,
-            Location = new Point(tp, tp),
+            Location = new Point(tp, gy + 3),
             BackColor = Color.Transparent,
         };
-        generalPage.Controls.Add(generalPlaceholder);
+        generalPage.Controls.Add(fontLabel);
+
+        var currentFont = AppSettings.Load().GlobalFont;
+        var fontCombo = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Font = new Font("Segoe UI", 9.5f),
+            BackColor = currentTheme.BgHeader,
+            ForeColor = currentTheme.TextPrimary,
+            FlatStyle = FlatStyle.Flat,
+            Size = new Size(250, 26),
+            Location = new Point(tp + 100, gy),
+            DrawMode = DrawMode.OwnerDrawFixed,
+            ItemHeight = 24,
+        };
+
+        // Populate with installed font families
+        using var installedFonts = new System.Drawing.Text.InstalledFontCollection();
+        var families = installedFonts.Families;
+        int selectedFontIdx = 0;
+        for (int fi = 0; fi < families.Length; fi++)
+        {
+            fontCombo.Items.Add(families[fi].Name);
+            if (families[fi].Name.Equals(currentFont, StringComparison.OrdinalIgnoreCase))
+                selectedFontIdx = fi;
+        }
+
+        // Owner-draw to preview each font
+        fontCombo.DrawItem += (_, de) =>
+        {
+            if (de.Index < 0) return;
+            string name = fontCombo.Items[de.Index].ToString()!;
+            bool selected = (de.State & DrawItemState.Selected) != 0;
+            var bg = selected ? currentTheme.Primary : currentTheme.BgHeader;
+            var fg = selected ? Color.White : currentTheme.TextPrimary;
+
+            using var bgBrush = new SolidBrush(bg);
+            de.Graphics.FillRectangle(bgBrush, de.Bounds);
+
+            try
+            {
+                using var previewFont = new Font(name, 10f);
+                using var textBrush = new SolidBrush(fg);
+                using var sf = new StringFormat { LineAlignment = StringAlignment.Center };
+                de.Graphics.DrawString(name, previewFont, textBrush, de.Bounds, sf);
+            }
+            catch
+            {
+                using var fallback = new Font("Segoe UI", 10f);
+                using var textBrush = new SolidBrush(fg);
+                using var sf = new StringFormat { LineAlignment = StringAlignment.Center };
+                de.Graphics.DrawString(name, fallback, textBrush, de.Bounds, sf);
+            }
+        };
+
+        fontCombo.SelectedIndex = selectedFontIdx;
+        generalPage.Controls.Add(fontCombo);
+        gy += 34;
+
+        // Preview label
+        var fontPreviewLabel = new Label
+        {
+            Text = "The quick brown fox jumps over the lazy dog",
+            Font = new Font(currentFont, 11f),
+            ForeColor = currentTheme.TextPrimary,
+            AutoSize = true,
+            MaximumSize = new Size(tabInner, 40),
+            Location = new Point(tp, gy),
+            BackColor = Color.Transparent,
+        };
+        generalPage.Controls.Add(fontPreviewLabel);
+        gy += 34;
+
+        // Apply button
+        var fontApplyButton = new RoundedButton
+        {
+            Text = "Apply",
+            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+            Size = new Size(90, 30),
+            Location = new Point(tp, gy),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = currentTheme.Primary,
+            ForeColor = Color.White,
+            Cursor = Cursors.Hand,
+        };
+        fontApplyButton.FlatAppearance.BorderSize = 0;
+        fontApplyButton.FlatAppearance.MouseOverBackColor = currentTheme.PrimaryLight;
+        fontApplyButton.Click += (_, _) =>
+        {
+            string selectedFont = fontCombo.SelectedItem?.ToString() ?? "Segoe UI";
+            var settings = AppSettings.Load();
+            AppSettings.Save(settings with { GlobalFont = selectedFont });
+
+            // Update preview
+            try { fontPreviewLabel.Font = new Font(selectedFont, 11f); } catch { }
+
+            // Apply to this form
+            ApplyGlobalFont(selectedFont);
+
+            GlobalFontChanged?.Invoke(selectedFont);
+        };
+        generalPage.Controls.Add(fontApplyButton);
+
+        // Update preview on selection change
+        fontCombo.SelectedIndexChanged += (_, _) =>
+        {
+            string name = fontCombo.SelectedItem?.ToString() ?? "Segoe UI";
+            try { fontPreviewLabel.Font = new Font(name, 11f); } catch { }
+        };
 
         // =============================================
         // TAB 1: Screen Capture
@@ -960,6 +1075,11 @@ class SettingsForm : Form
 
         // Set initial selection
         _themeCombo.SelectedIndex = selectedIndex;
+
+        // Apply saved global font on open
+        var savedGlobalFont = AppSettings.Load().GlobalFont;
+        if (!string.IsNullOrEmpty(savedGlobalFont) && savedGlobalFont != "Segoe UI")
+            ApplyGlobalFont(savedGlobalFont);
     }
 
     private static TabPage CreateTabPage(string text, PopupTheme theme)
@@ -1021,6 +1141,32 @@ class SettingsForm : Form
 
         Themes.Save(theme);
         ThemeChanged?.Invoke(theme);
+    }
+
+    private void ApplyGlobalFont(string fontFamily)
+    {
+        SuspendLayout();
+        try
+        {
+            var newFont = new Font(fontFamily, 10f);
+            Font = newFont;
+            foreach (Control c in Controls)
+                ApplyFontRecursive(c, fontFamily);
+        }
+        catch { }
+        ResumeLayout();
+        Invalidate(true);
+    }
+
+    private static void ApplyFontRecursive(Control control, string fontFamily)
+    {
+        try
+        {
+            control.Font = new Font(fontFamily, control.Font.Size, control.Font.Style);
+        }
+        catch { }
+        foreach (Control child in control.Controls)
+            ApplyFontRecursive(child, fontFamily);
     }
 
     private void ApplyThemeToForm(PopupTheme theme)

@@ -293,6 +293,19 @@ class AlarmEditForm : Form
         // Dynamic field visibility
         _scheduleCombo.SelectedIndexChanged += (_, _) => UpdateFieldVisibility();
         UpdateFieldVisibility();
+
+        // Apply saved global font
+        var savedFont = AppSettings.Load().GlobalFont;
+        if (!string.IsNullOrEmpty(savedFont) && savedFont != "Segoe UI")
+        {
+            try
+            {
+                Font = new Font(savedFont, Font.Size, Font.Style);
+                foreach (Control c in Controls)
+                    ApplyFontRecursive(c, savedFont);
+            }
+            catch { }
+        }
     }
 
     private void UpdateFieldVisibility()
@@ -405,5 +418,12 @@ class AlarmEditForm : Form
         };
         Controls.Add(lbl);
         return lbl;
+    }
+
+    private static void ApplyFontRecursive(Control control, string fontFamily)
+    {
+        try { control.Font = new Font(fontFamily, control.Font.Size, control.Font.Style); } catch { }
+        foreach (Control child in control.Controls)
+            ApplyFontRecursive(child, fontFamily);
     }
 }

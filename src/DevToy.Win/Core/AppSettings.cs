@@ -9,6 +9,9 @@ record AppSettingsData
     [JsonPropertyName("theme")]
     public string Theme { get; init; } = "Amber";
 
+    [JsonPropertyName("globalFont")]
+    public string GlobalFont { get; init; } = "Segoe UI";
+
     [JsonPropertyName("historyEnabled")]
     public bool HistoryEnabled { get; init; } = true;
 

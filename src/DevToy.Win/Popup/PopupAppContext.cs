@@ -223,6 +223,13 @@ class PopupAppContext : ApplicationContext
                 _globalHotkey.Register(hotkey);
         };
 
+        _settingsForm.GlobalFontChanged += fontFamily =>
+        {
+            _popupForm.ApplyGlobalFont(fontFamily);
+            if (_alarmForm != null && !_alarmForm.IsDisposed)
+                ApplyFontToForm(_alarmForm, fontFamily);
+        };
+
         _settingsForm.UninstallRequested += () => ExitApp();
 
         _popupForm.SnoozeChanged += UpdateTrayText;
@@ -247,6 +254,28 @@ class PopupAppContext : ApplicationContext
         else
         {
             _trayIcon.Text = "DevToy";
+        }
+    }
+
+    private static void ApplyFontToForm(Form form, string fontFamily)
+    {
+        try
+        {
+            form.SuspendLayout();
+            form.Font = new Font(fontFamily, form.Font.Size, form.Font.Style);
+            ApplyFontRecursive(form, fontFamily);
+            form.ResumeLayout();
+            form.Invalidate(true);
+        }
+        catch { }
+    }
+
+    private static void ApplyFontRecursive(Control control, string fontFamily)
+    {
+        foreach (Control child in control.Controls)
+        {
+            try { child.Font = new Font(fontFamily, child.Font.Size, child.Font.Style); } catch { }
+            ApplyFontRecursive(child, fontFamily);
         }
     }
 
@@ -279,6 +308,9 @@ class PopupAppContext : ApplicationContext
 
         _alarmForm = new AlarmForm(_popupForm.CurrentTheme);
         _alarmForm.FormClosed += (_, _) => _alarmForm = null;
+        var savedFont = AppSettings.Load().GlobalFont;
+        if (!string.IsNullOrEmpty(savedFont) && savedFont != "Segoe UI")
+            ApplyFontToForm(_alarmForm, savedFont);
         _alarmForm.Show();
     }
 
