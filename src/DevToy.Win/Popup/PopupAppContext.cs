@@ -15,6 +15,7 @@ class PopupAppContext : ApplicationContext
     private readonly GlobalHotkey _globalHotkey;
     private readonly ToolStripItem _takeScreenshotItem;
     private readonly ToolStripItem _editScreenshotItem;
+    private AlarmForm? _alarmForm;
 
     public PopupAppContext(string initialTitle, string initialMessage, string initialType, string sessionId = "", string cwd = "")
     {
@@ -58,6 +59,14 @@ class PopupAppContext : ApplicationContext
             _popupForm.ShowUpdateAvailable(metadata);
         };
         UpdateChecker.Start();
+
+        // Start alarm scheduler
+        if (AppSettings.Load().AlarmsEnabled)
+        {
+            AlarmNotifier.Initialize(_popupForm, _trayIcon);
+            AlarmScheduler.AlarmTriggered += AlarmNotifier.HandleAlarmTriggered;
+            AlarmScheduler.Start();
+        }
     }
 
     private ContextMenuStrip BuildTrayMenu()
@@ -71,6 +80,7 @@ class PopupAppContext : ApplicationContext
         menu.Items[2].Visible = captureEnabled;
         menu.Items[3].Visible = captureEnabled;
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Alarms...", null, (_, _) => ShowAlarmForm());
         menu.Items.Add("Settings...", null, (_, _) => ShowSettingsForm());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitApp());
@@ -257,11 +267,27 @@ class PopupAppContext : ApplicationContext
         _trayIcon.ShowBalloonTip(5000, title, truncated, icon);
     }
 
+    private void ShowAlarmForm()
+    {
+        if (_alarmForm != null && !_alarmForm.IsDisposed)
+        {
+            _alarmForm.BringToFront();
+            _alarmForm.Activate();
+            return;
+        }
+
+        _alarmForm = new AlarmForm(_popupForm.CurrentTheme);
+        _alarmForm.FormClosed += (_, _) => _alarmForm = null;
+        _alarmForm.Show();
+    }
+
     private void ExitApp()
     {
         _cts.Cancel();
         UpdateChecker.Stop();
+        AlarmScheduler.Stop();
         _globalHotkey.Dispose();
+        _alarmForm?.Close();
         _settingsForm?.Close();
         _trayIcon.Visible = false;
         _trayIcon.Dispose();

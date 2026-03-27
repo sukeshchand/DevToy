@@ -39,6 +39,25 @@ record AppSettingsData
     [JsonPropertyName("slShowVersion")] public bool SlShowVersion { get; init; } = true;
     [JsonPropertyName("slShowEditStats")] public bool SlShowEditStats { get; init; } = true;
 
+    // Alarm settings
+    [JsonPropertyName("alarmsEnabled")]
+    public bool AlarmsEnabled { get; init; } = true;
+
+    [JsonPropertyName("alarmDefaultNotification")]
+    public string AlarmDefaultNotification { get; init; } = "Both";
+
+    [JsonPropertyName("alarmDefaultSnoozeMinutes")]
+    public int AlarmDefaultSnoozeMinutes { get; init; } = 5;
+
+    [JsonPropertyName("alarmSoundEnabled")]
+    public bool AlarmSoundEnabled { get; init; } = true;
+
+    [JsonPropertyName("alarmHistoryMaxEntries")]
+    public int AlarmHistoryMaxEntries { get; init; } = 500;
+
+    [JsonPropertyName("alarmMissedGraceMinutes")]
+    public int AlarmMissedGraceMinutes { get; init; } = 5;
+
     [JsonPropertyName("screenshotEnabled")]
     public bool ScreenshotEnabled { get; init; } = false;
 

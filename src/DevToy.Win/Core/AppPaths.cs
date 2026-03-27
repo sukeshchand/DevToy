@@ -34,6 +34,9 @@ static class AppPaths
     /// <summary>Claude status line script: Root\scripts\context-bar.ps1</summary>
     public static string ClaudeStatusLineScript { get; } = Path.Combine(Root, "scripts", "context-bar.ps1");
 
+    /// <summary>Alarms data: Root\alarms\</summary>
+    public static string AlarmsDir { get; } = Path.Combine(Root, "alarms");
+
     /// <summary>Claude hooks directory: %USERPROFILE%\.claude\hooks\</summary>
     public static string ClaudeHooksDir { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "hooks");
