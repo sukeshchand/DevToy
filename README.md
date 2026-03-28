@@ -1,2 +1,2 @@
-# DevToy
+# ProdToy
 Fancy Rich Developer Partner
