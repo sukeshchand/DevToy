@@ -36,6 +36,8 @@ class ScreenshotCanvas : Control
     private readonly List<PointF> _eraserPoints = new();
     private PointF _lastEraserPoint;
     private Bitmap? _eraserBeforeSnapshot;
+    private PointF _eraserCursorPos;
+    private bool _eraserCursorVisible;
 
     public event Action? CanvasChanged;
     public event Action? SelectionChanged;
@@ -194,6 +196,21 @@ class ScreenshotCanvas : Control
         if (_isDrawing && _drawingObject != null)
         {
             _drawingObject.Render(g);
+        }
+
+        // Draw eraser cursor circle (dual-color for visibility on any background)
+        if (_eraserCursorVisible && _session.CurrentTool == AnnotationTool.Eraser)
+        {
+            float r = _session.CurrentThickness * 2;
+            float cx = _eraserCursorPos.X - r;
+            float cy = _eraserCursorPos.Y - r;
+            float d = r * 2;
+            using var outerPen = new Pen(Color.Black, 1.5f);
+            g.DrawEllipse(outerPen, cx, cy, d, d);
+            using var innerPen = new Pen(Color.White, 1.5f);
+            innerPen.DashStyle = DashStyle.Dash;
+            innerPen.DashPattern = new float[] { 4f, 4f };
+            g.DrawEllipse(innerPen, cx, cy, d, d);
         }
 
         // Draw region selection rectangle
@@ -366,6 +383,7 @@ class ScreenshotCanvas : Control
 
         if (_isErasing && _eraserTarget != null)
         {
+            _eraserCursorPos = pt;
             ApplyErasePoint(pt);
             Invalidate();
             return;
@@ -414,6 +432,14 @@ class ScreenshotCanvas : Control
         if (_session.CurrentTool == AnnotationTool.Select)
         {
             UpdateCursor(pt);
+        }
+
+        // Track eraser cursor position for visual feedback
+        if (_session.CurrentTool == AnnotationTool.Eraser)
+        {
+            _eraserCursorPos = pt;
+            _eraserCursorVisible = true;
+            Invalidate();
         }
     }
 
@@ -971,11 +997,54 @@ class ScreenshotCanvas : Control
     public void UpdateToolCursor()
     {
         if (_editingText != null) return;
+        if (_session?.CurrentTool == AnnotationTool.Eraser)
+        {
+            Cursor = new Cursor(new MemoryStream(CreateBlankCursorData()));
+            _eraserCursorVisible = ClientRectangle.Contains(PointToClient(Control.MousePosition));
+            Invalidate();
+            return;
+        }
+        _eraserCursorVisible = false;
         Cursor = _session?.CurrentTool switch
         {
             AnnotationTool.Select => Cursors.Default,
             AnnotationTool.Text => Cursors.IBeam,
             _ => Cursors.Cross,
         };
+    }
+
+    protected override void OnMouseEnter(EventArgs e)
+    {
+        base.OnMouseEnter(e);
+        if (_session?.CurrentTool == AnnotationTool.Eraser)
+        {
+            _eraserCursorVisible = true;
+            Invalidate();
+        }
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        if (_eraserCursorVisible)
+        {
+            _eraserCursorVisible = false;
+            Invalidate();
+        }
+    }
+
+    private static byte[] CreateBlankCursorData()
+    {
+        // Minimal .cur format: 1x1 transparent cursor
+        using var bmp = new Bitmap(1, 1, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        bmp.SetPixel(0, 0, Color.FromArgb(0, 0, 0, 0));
+        var ms = new MemoryStream();
+        var icon = System.Drawing.Icon.FromHandle(bmp.GetHicon());
+        icon.Save(ms);
+        ms.Position = 0;
+        // Patch the icon header to be a cursor (type 2 instead of 1), hotspot at 0,0
+        var data = ms.ToArray();
+        data[2] = 2; // idType = cursor
+        return data;
     }
 }
