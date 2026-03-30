@@ -199,6 +199,28 @@ class MaskBoxObject : ShapeObject
         var rect = GetShapeRect();
         using var brush = new SolidBrush(StrokeColor);
         g.FillRectangle(brush, rect);
+
+        // Draw repeating password mask symbols (●) inside the box
+        if (rect.Width > 8 && rect.Height > 8)
+        {
+            // Pick a contrasting color for the dots
+            int brightness = (StrokeColor.R * 299 + StrokeColor.G * 587 + StrokeColor.B * 114) / 1000;
+            var dotColor = Color.FromArgb(80, brightness > 128 ? 0 : 255, brightness > 128 ? 0 : 255, brightness > 128 ? 0 : 255);
+
+            float fontSize = Math.Max(8f, Math.Min(rect.Height * 0.6f, 20f));
+            using var font = new Font("Segoe UI", fontSize, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var dotBrush = new SolidBrush(dotColor);
+
+            string dot = "\u25CF"; // ●
+            var dotSize = g.MeasureString(dot, font);
+            float spacing = dotSize.Width * 0.85f;
+            float y = rect.Y + (rect.Height - dotSize.Height) / 2f;
+
+            for (float x = rect.X + spacing * 0.3f; x + dotSize.Width * 0.5f < rect.Right; x += spacing)
+            {
+                g.DrawString(dot, font, dotBrush, x, y);
+            }
+        }
     }
 
     public override bool HitTest(PointF point, float tolerance)
