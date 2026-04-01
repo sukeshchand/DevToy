@@ -814,19 +814,23 @@ class ScreenshotCanvas : Control
             }
         }
 
-        // Snapshot for undo
-        var beforeImage = _session.OriginalImage;
-        var oldSize = _session.CanvasSize;
-        var oldOffset = _session.ImageOffset;
+        // Compute shifted annotations for the after-state (don't mutate session directly)
+        var shiftedAnnotations = _session.Annotations.Select(a =>
+        {
+            var clone = a.Clone();
+            clone.Move(-rx, -ry);
+            return clone;
+        }).ToList();
 
-        // Apply crop: replace original image, reset offset, update canvas size
-        _session.OriginalImage = croppedImage;
-        _session.CanvasSize = new Size(rw, rh);
-        _session.ImageOffset = Point.Empty;
+        var corners = new[] {
+            new PointF(rx, ry), new PointF(rx + rw, ry),
+            new PointF(rx + rw, ry + rh), new PointF(rx, ry + rh)
+        };
 
-        // Shift all annotations by the crop offset
-        foreach (var obj in _session.Annotations)
-            obj.Move(-rx, -ry);
+        // Execute through undo system
+        var action = new CropAction(_session, croppedImage, new Size(rw, rh),
+            shiftedAnnotations, "rect", corners);
+        _session.UndoRedo.Execute(action);
 
         Size = new Size(rw, rh);
         Invalidate();
@@ -974,18 +978,14 @@ class ScreenshotCanvas : Control
         int w = Math.Max(1, (int)Math.Round(outW));
         int h = Math.Max(1, (int)Math.Round(outH));
 
-        // Perspective warp: for each output pixel, sample from the source quad
+        // Perspective warp
         var result = PerspectiveWarp(flattened, _cropCorners, w, h);
         flattened.Dispose();
 
-        // Replace session state
-        _session.OriginalImage = result;
-        _session.CanvasSize = new Size(w, h);
-        _session.ImageOffset = Point.Empty;
-
-        // Clear annotations (they're baked into the warp)
-        _session.Annotations.Clear();
-        _session.UndoRedo.Clear();
+        // Execute through undo system — annotations baked into warp, so after-annotations is empty
+        var action = new CropAction(_session, result, new Size(w, h),
+            new List<AnnotationObject>(), "perspective", (PointF[])_cropCorners.Clone());
+        _session.UndoRedo.Execute(action);
 
         Size = new Size(w, h);
         Invalidate();

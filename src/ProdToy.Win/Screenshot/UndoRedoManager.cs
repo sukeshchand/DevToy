@@ -312,3 +312,82 @@ class BitmapEraseAction : IEditorAction
         g.DrawImage(_beforeRegion, _affectedRect.X, _affectedRect.Y);
     }
 }
+
+class CropAction : IEditorAction
+{
+    private readonly EditorSession _session;
+    private readonly System.Drawing.Bitmap _beforeImage;
+    private readonly System.Drawing.Size _beforeCanvasSize;
+    private readonly System.Drawing.Point _beforeOffset;
+    private readonly List<AnnotationObject> _beforeAnnotations;
+    private readonly System.Drawing.Bitmap _afterImage;
+    private readonly System.Drawing.Size _afterCanvasSize;
+    private readonly List<AnnotationObject> _afterAnnotations;
+
+    public string CropType { get; }
+    public System.Drawing.PointF[] Corners { get; }
+    public string? BeforeImagePath { get; set; }
+    public string? AfterImagePath { get; set; }
+    public string Description => "Crop";
+
+    public CropAction(EditorSession session, System.Drawing.Bitmap afterImage,
+        System.Drawing.Size afterCanvasSize, List<AnnotationObject> afterAnnotations,
+        string cropType, System.Drawing.PointF[] corners)
+    {
+        _session = session;
+        _beforeImage = (System.Drawing.Bitmap)session.OriginalImage.Clone();
+        _beforeCanvasSize = session.CanvasSize;
+        _beforeOffset = session.ImageOffset;
+        _beforeAnnotations = session.Annotations.Select(a => a.Clone()).ToList();
+        _afterImage = afterImage;
+        _afterCanvasSize = afterCanvasSize;
+        _afterAnnotations = afterAnnotations;
+        CropType = cropType;
+        Corners = corners;
+    }
+
+    // Constructor for deserialization (before/after images loaded from files)
+    public CropAction(EditorSession session,
+        System.Drawing.Bitmap beforeImage, System.Drawing.Size beforeSize, System.Drawing.Point beforeOffset,
+        List<AnnotationObject> beforeAnnotations,
+        System.Drawing.Bitmap afterImage, System.Drawing.Size afterSize,
+        List<AnnotationObject> afterAnnotations,
+        string cropType, System.Drawing.PointF[] corners)
+    {
+        _session = session;
+        _beforeImage = beforeImage;
+        _beforeCanvasSize = beforeSize;
+        _beforeOffset = beforeOffset;
+        _beforeAnnotations = beforeAnnotations;
+        _afterImage = afterImage;
+        _afterCanvasSize = afterSize;
+        _afterAnnotations = afterAnnotations;
+        CropType = cropType;
+        Corners = corners;
+    }
+
+    public System.Drawing.Bitmap GetBeforeImage() => _beforeImage;
+    public System.Drawing.Bitmap GetAfterImage() => _afterImage;
+    public List<AnnotationObject> GetBeforeAnnotations() => _beforeAnnotations;
+    public List<AnnotationObject> GetAfterAnnotations() => _afterAnnotations;
+    public System.Drawing.Size GetBeforeCanvasSize() => _beforeCanvasSize;
+    public System.Drawing.Point GetBeforeOffset() => _beforeOffset;
+
+    public void Execute()
+    {
+        _session.OriginalImage = (System.Drawing.Bitmap)_afterImage.Clone();
+        _session.CanvasSize = _afterCanvasSize;
+        _session.ImageOffset = System.Drawing.Point.Empty;
+        _session.Annotations.Clear();
+        _session.Annotations.AddRange(_afterAnnotations.Select(a => a.Clone()));
+    }
+
+    public void Undo()
+    {
+        _session.OriginalImage = (System.Drawing.Bitmap)_beforeImage.Clone();
+        _session.CanvasSize = _beforeCanvasSize;
+        _session.ImageOffset = _beforeOffset;
+        _session.Annotations.Clear();
+        _session.Annotations.AddRange(_beforeAnnotations.Select(a => a.Clone()));
+    }
+}

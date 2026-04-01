@@ -55,9 +55,9 @@ static class SessionSerializer
 
             // Serialize undo/redo stacks (max 50 each)
             foreach (var action in session.UndoRedo.UndoItems.Take(50))
-                state.UndoStack.Add(SerializeAction(action));
+                state.UndoStack.Add(SerializeAction(action, session));
             foreach (var action in session.UndoRedo.RedoItems.Take(50))
-                state.RedoStack.Add(SerializeAction(action));
+                state.RedoStack.Add(SerializeAction(action, session));
 
             string dir = session.EditDir;
             Directory.CreateDirectory(dir);
@@ -303,7 +303,7 @@ static class SessionSerializer
 
     // --- Action serialization ---
 
-    private static ActionData SerializeAction(IEditorAction action)
+    private static ActionData SerializeAction(IEditorAction action, EditorSession? session = null)
     {
         var data = new ActionData { Type = action.GetType().Name, Description = action.Description };
 
@@ -360,6 +360,37 @@ static class SessionSerializer
                 data.ShiftX = GetField<int>(canvasResize, "_shiftX");
                 data.ShiftY = GetField<int>(canvasResize, "_shiftY");
                 break;
+            case CropAction crop:
+                data.AnnotationId = -1;
+                data.CropType = crop.CropType;
+                data.CropCorners = crop.Corners.Select(p => new float[] { p.X, p.Y }).ToList();
+                // Save before/after images to _edits folder
+                string dir = session.EditDir;
+                Directory.CreateDirectory(dir);
+                string ts = DateTime.Now.ToString("HHmmss_fff");
+                if (crop.BeforeImagePath == null)
+                {
+                    crop.BeforeImagePath = Path.Combine(dir, $"crop_before_{ts}.png");
+                    crop.GetBeforeImage().Save(crop.BeforeImagePath, System.Drawing.Imaging.ImageFormat.Png);
+                }
+                if (crop.AfterImagePath == null)
+                {
+                    crop.AfterImagePath = Path.Combine(dir, $"crop_after_{ts}.png");
+                    crop.GetAfterImage().Save(crop.AfterImagePath, System.Drawing.Imaging.ImageFormat.Png);
+                }
+                data.CropBeforeFile = Path.GetFileName(crop.BeforeImagePath);
+                data.CropAfterFile = Path.GetFileName(crop.AfterImagePath);
+                // Save before/after canvas sizes and offset
+                var bSz = crop.GetBeforeCanvasSize();
+                var bOff = crop.GetBeforeOffset();
+                data.OldSizeW = bSz.Width; data.OldSizeH = bSz.Height;
+                data.OldOffsetX = bOff.X; data.OldOffsetY = bOff.Y;
+                data.NewSizeW = crop.GetAfterImage().Width;
+                data.NewSizeH = crop.GetAfterImage().Height;
+                // Save before/after annotations
+                data.CropBeforeAnnotations = crop.GetBeforeAnnotations().Select(a => SerializeAnnotation(a)).ToList();
+                data.CropAfterAnnotations = crop.GetAfterAnnotations().Select(a => SerializeAnnotation(a)).ToList();
+                break;
         }
 
         return data;
@@ -397,6 +428,7 @@ static class SessionSerializer
                 new Point(data.OldOffsetX, data.OldOffsetY),
                 new Point(data.NewOffsetX, data.NewOffsetY),
                 data.ShiftX, data.ShiftY),
+            "CropAction" => DeserializeCropAction(data, session),
             _ => null,
         };
     }
@@ -433,6 +465,46 @@ static class SessionSerializer
     }
 
     // --- Color helpers ---
+
+    private static CropAction? DeserializeCropAction(ActionData data, EditorSession session)
+    {
+        try
+        {
+            string dir = session.EditDir;
+            string beforePath = Path.Combine(dir, data.CropBeforeFile ?? "");
+            string afterPath = Path.Combine(dir, data.CropAfterFile ?? "");
+            if (!File.Exists(beforePath) || !File.Exists(afterPath)) return null;
+
+            Bitmap LoadBmp(string path)
+            {
+                using var stream = File.OpenRead(path);
+                using var bmp = new Bitmap(stream);
+                var img = new Bitmap(bmp.Width, bmp.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                using var g = Graphics.FromImage(img);
+                g.DrawImage(bmp, 0, 0);
+                return img;
+            }
+
+            var beforeImage = LoadBmp(beforePath);
+            var afterImage = LoadBmp(afterPath);
+            var corners = data.CropCorners?.Select(p => new PointF(p[0], p[1])).ToArray() ?? new PointF[4];
+            var beforeAnnotations = (data.CropBeforeAnnotations ?? new())
+                .Select(a => DeserializeAnnotation(a)).Where(a => a != null).Cast<AnnotationObject>().ToList();
+            var afterAnnotations = (data.CropAfterAnnotations ?? new())
+                .Select(a => DeserializeAnnotation(a)).Where(a => a != null).Cast<AnnotationObject>().ToList();
+
+            var action = new CropAction(session,
+                beforeImage, new Size(data.OldSizeW, data.OldSizeH), new Point(data.OldOffsetX, data.OldOffsetY),
+                beforeAnnotations,
+                afterImage, new Size(data.NewSizeW, data.NewSizeH),
+                afterAnnotations,
+                data.CropType ?? "perspective", corners);
+            action.BeforeImagePath = beforePath;
+            action.AfterImagePath = afterPath;
+            return action;
+        }
+        catch { return null; }
+    }
 
     private static string ToHex(Color c) => $"#{c.A:X2}{c.R:X2}{c.G:X2}{c.B:X2}";
 
@@ -542,4 +614,12 @@ class ActionData
     [JsonPropertyName("newOffsetY")] public int NewOffsetY { get; set; }
     [JsonPropertyName("shiftX")] public int ShiftX { get; set; }
     [JsonPropertyName("shiftY")] public int ShiftY { get; set; }
+
+    // Crop action
+    [JsonPropertyName("cropType")] public string? CropType { get; set; }
+    [JsonPropertyName("cropCorners")] public List<float[]>? CropCorners { get; set; }
+    [JsonPropertyName("cropBeforeFile")] public string? CropBeforeFile { get; set; }
+    [JsonPropertyName("cropAfterFile")] public string? CropAfterFile { get; set; }
+    [JsonPropertyName("cropBeforeAnnotations")] public List<AnnotationData>? CropBeforeAnnotations { get; set; }
+    [JsonPropertyName("cropAfterAnnotations")] public List<AnnotationData>? CropAfterAnnotations { get; set; }
 }
