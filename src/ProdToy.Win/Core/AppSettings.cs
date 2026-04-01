@@ -61,6 +61,11 @@ record AppSettingsData
     [JsonPropertyName("alarmMissedGraceMinutes")]
     public int AlarmMissedGraceMinutes { get; init; } = 5;
 
+    // Claude hook toggles
+    [JsonPropertyName("hookStopEnabled")] public bool HookStopEnabled { get; init; } = true;
+    [JsonPropertyName("hookNotificationEnabled")] public bool HookNotificationEnabled { get; init; } = true;
+    [JsonPropertyName("hookUserPromptEnabled")] public bool HookUserPromptEnabled { get; init; } = true;
+
     [JsonPropertyName("screenshotEnabled")]
     public bool ScreenshotEnabled { get; init; } = false;
 

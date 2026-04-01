@@ -11,14 +11,53 @@ class ScreenshotEditorForm : Form
     private readonly ScreenshotToolbar _toolbar;
     private readonly RecentImagesPanel _recentPanel;
     private readonly PopupTheme _theme;
+    private System.Windows.Forms.Timer _autoSaveTimer;
 
     public event Action<string>? ImageSaved;
     public event Action? ImageCopied;
 
-    public ScreenshotEditorForm(Bitmap capturedImage)
+    /// <summary>Opens an existing screenshot file, restoring edit history if available.</summary>
+    public ScreenshotEditorForm(string filePath) : this(
+        LoadExisting(filePath, Path.GetFileNameWithoutExtension(filePath)),
+        Path.GetFileNameWithoutExtension(filePath)) { }
+
+    private static Bitmap LoadExisting(string filePath, string editId)
+    {
+        // Prefer base.png (original) from _edits folder if it exists
+        string basePath = Path.Combine(AppPaths.ScreenshotsEditsDir, editId, "base.png");
+        string loadFrom = File.Exists(basePath) ? basePath : filePath;
+
+        using var stream = File.OpenRead(loadFrom);
+        using var bmp = new Bitmap(stream);
+        var image = new Bitmap(bmp.Width, bmp.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using var g = Graphics.FromImage(image);
+        g.DrawImage(bmp, 0, 0);
+        return image;
+    }
+
+    public ScreenshotEditorForm(Bitmap capturedImage, string? existingEditId = null)
     {
         _session = new EditorSession(capturedImage);
-        InitEditFolder(_session, capturedImage);
+        if (existingEditId != null)
+        {
+            _session.EditId = existingEditId;
+            // Create _edits folder if missing
+            string editDir = _session.EditDir;
+            if (!Directory.Exists(editDir))
+            {
+                Directory.CreateDirectory(editDir);
+                capturedImage.Save(Path.Combine(editDir, "base.png"), System.Drawing.Imaging.ImageFormat.Png);
+            }
+            else
+            {
+                // Restore annotations and settings from existing state
+                SessionSerializer.Restore(_session);
+            }
+        }
+        else
+        {
+            InitEditFolder(_session, capturedImage);
+        }
         _theme = Themes.LoadSaved();
 
         Text = "ProdToy \u2014 Screenshot Editor";
@@ -97,14 +136,18 @@ class ScreenshotEditorForm : Form
         // When canvas resizes due to dropped image, sync container
         _canvas.CanvasResizeRequested += _ => _canvasContainer.SyncCanvasSize();
 
-        // Auto-save state to _edits folder on every undo/redo action
-        _session.UndoRedo.StateChanged += () => SessionSerializer.Save(_session);
+        // Auto-save on every undo/redo action and canvas change
+        _autoSaveTimer = new System.Windows.Forms.Timer { Interval = 300 };
+        _autoSaveTimer.Tick += (_, _) => { _autoSaveTimer.Stop(); AutoSaveNow(); };
+        _session.UndoRedo.StateChanged += ScheduleAutoSave;
+        _canvas.CanvasChanged += ScheduleAutoSave;
     }
 
     private void WireToolbarEvents()
     {
         _toolbar.QuickCopyRequested += DoCopy;
         _toolbar.CopyPathRequested += DoCopyPath;
+        _toolbar.CopyPathTextRequested += DoCopyPathText;
 
         _toolbar.ToolSelected += tool =>
         {
@@ -185,15 +228,19 @@ class ScreenshotEditorForm : Form
 
         _toolbar.BorderToggled += () =>
         {
+            _session.BorderEnabled = !_session.BorderEnabled;
+            _canvas.Invalidate(); _toolbar.Invalidate();
+        };
+
+        _toolbar.BorderPopupRequested += () =>
+        {
             var pt = _toolbar.PointToScreen(new Point(_toolbar.Width / 2 - 110, _toolbar.Height));
             var popup = new BorderPopup(_session, pt);
             popup.SettingsChanged += () => { _canvas.Invalidate(); _toolbar.Invalidate(); };
             popup.Show(this);
         };
 
-        _toolbar.SaveRequested += DoSave;
         _toolbar.SaveAsRequested += DoSaveAs;
-        _toolbar.CopyRequested += DoCopy;
         _toolbar.CancelRequested += () => Close();
     }
 
@@ -201,14 +248,23 @@ class ScreenshotEditorForm : Form
     {
         if (e.Control && e.Shift && e.KeyCode == Keys.S) { DoSaveAs(); e.Handled = true; return; }
         if (e.Control && e.Shift && e.KeyCode == Keys.C) { DoCopyPath(); e.Handled = true; return; }
-        if (e.Control && e.KeyCode == Keys.S) { DoSave(); e.Handled = true; return; }
+        if (e.Control && e.Shift && e.KeyCode == Keys.P) { DoCopyPathText(); e.Handled = true; return; }
         if (e.Control && e.KeyCode == Keys.C) { DoCopy(); e.Handled = true; return; }
         if (e.Control && e.KeyCode == Keys.Z) { _session.UndoRedo.Undo(); _canvasContainer.SyncCanvasSize(); _canvas.Invalidate(); e.Handled = true; return; }
         if (e.Control && e.KeyCode == Keys.Y) { _session.UndoRedo.Redo(); _canvasContainer.SyncCanvasSize(); _canvas.Invalidate(); e.Handled = true; return; }
         // Skip Delete/Escape and single-key shortcuts while editing text
         bool isEditingText = _session.Annotations.Any(a => a is TextObject { IsEditing: true });
 
-        if (e.KeyCode == Keys.Delete && !isEditingText) { _session.DeleteSelected(); _canvas.Invalidate(); e.Handled = true; return; }
+        if (e.KeyCode == Keys.Delete && !isEditingText)
+        {
+            if (_canvas.HasSelectedRegion)
+                _canvas.DeleteSelectedRegion();
+            else
+                _session.DeleteSelected();
+            _canvas.Invalidate();
+            e.Handled = true;
+            return;
+        }
         if (e.KeyCode == Keys.Escape)
         {
             if (isEditingText) { _canvas.CommitTextEdit(); _canvas.Invalidate(); e.Handled = true; return; }
@@ -245,21 +301,23 @@ class ScreenshotEditorForm : Form
         base.OnKeyDown(e);
     }
 
-    private void DoSave()
+    private void ScheduleAutoSave()
+    {
+        if (_autoSaveTimer == null) return;
+        _autoSaveTimer.Stop();
+        _autoSaveTimer.Start();
+    }
+
+    private void AutoSaveNow()
     {
         try
         {
-            _canvas.CommitTextEdit();
-            string path = GetLinkedSavePath();
-            ScreenshotExporter.SaveToFile(_session, path);
-            ImageSaved?.Invoke(path);
-            Close();
+            _autoSaveTimer?.Stop();
+            SessionSerializer.Save(_session);
+            ScreenshotExporter.SaveToFile(_session, GetLinkedSavePath());
+            SavePreview();
         }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Save failed: {ex.Message}");
-            MessageBox.Show(this, $"Save failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
+        catch (Exception ex) { Debug.WriteLine($"AutoSave failed: {ex.Message}"); }
     }
 
     private void DoSaveAs()
@@ -275,12 +333,7 @@ class ScreenshotEditorForm : Form
                 InitialDirectory = AppPaths.ScreenshotsDir,
             };
             if (dlg.ShowDialog(this) == DialogResult.OK)
-            {
                 ScreenshotExporter.SaveToFile(_session, dlg.FileName);
-    
-                ImageSaved?.Invoke(dlg.FileName);
-                Close();
-            }
         }
         catch (Exception ex)
         {
@@ -294,11 +347,8 @@ class ScreenshotEditorForm : Form
         try
         {
             _canvas.CommitTextEdit();
-            string path = GetLinkedSavePath();
-            ScreenshotExporter.SaveToFile(_session, path);
             ScreenshotExporter.CopyToClipboard(_session);
-            ImageSaved?.Invoke(path);
-            Close();
+            WindowState = FormWindowState.Minimized;
         }
         catch (Exception ex) { Debug.WriteLine($"Copy failed: {ex.Message}"); }
     }
@@ -308,19 +358,30 @@ class ScreenshotEditorForm : Form
         try
         {
             _canvas.CommitTextEdit();
+            AutoSaveNow();
             string path = GetLinkedSavePath();
-            ScreenshotExporter.SaveToFile(_session, path);
             var fileList = new System.Collections.Specialized.StringCollection();
             fileList.Add(path);
             Clipboard.SetFileDropList(fileList);
-            ImageSaved?.Invoke(path);
-            Close();
+            WindowState = FormWindowState.Minimized;
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Copy Path failed: {ex.Message}");
             MessageBox.Show(this, $"Copy Path failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private void DoCopyPathText()
+    {
+        try
+        {
+            _canvas.CommitTextEdit();
+            AutoSaveNow();
+            Clipboard.SetText(GetLinkedSavePath());
+            WindowState = FormWindowState.Minimized;
+        }
+        catch (Exception ex) { Debug.WriteLine($"Copy Path Text failed: {ex.Message}"); }
     }
 
     /// <summary>Create the _edits folder for this capture and save the base image.</summary>
@@ -351,26 +412,56 @@ class ScreenshotEditorForm : Form
         return Path.Combine(AppPaths.ScreenshotsDir, _session.EditId + ".png");
     }
 
+    /// <summary>Load an existing file into the editor, reusing the form.</summary>
+    public void LoadFile(string filePath)
+    {
+        string fileEditId = Path.GetFileNameWithoutExtension(filePath);
+        if (fileEditId.Equals(_session.EditId, StringComparison.OrdinalIgnoreCase))
+        {
+            BringToForeground();
+            return;
+        }
+        LoadSession(fileEditId, filePath);
+        BringToForeground();
+    }
+
+    /// <summary>Load a new capture into the editor, reusing the form.</summary>
+    public void LoadCapture(Bitmap capturedImage)
+    {
+        var tempSession = new EditorSession(capturedImage);
+        InitEditFolder(tempSession, capturedImage);
+        LoadSession(tempSession.EditId, GetLinkedSavePathFor(tempSession.EditId));
+        BringToForeground();
+    }
+
+    public void BringToForeground()
+    {
+        if (WindowState == FormWindowState.Minimized)
+            WindowState = FormWindowState.Normal;
+        Show();
+        Activate();
+        BringToFront();
+    }
+
+    private static string GetLinkedSavePathFor(string editId)
+    {
+        return Path.Combine(AppPaths.ScreenshotsDir, editId + ".png");
+    }
+
     private void OpenFromList(string filePath)
     {
-        // Don't reload the same image
         string fileEditId = Path.GetFileNameWithoutExtension(filePath);
         if (fileEditId.Equals(_session.EditId, StringComparison.OrdinalIgnoreCase)) return;
+        LoadSession(fileEditId, filePath);
+    }
 
-        if (MessageBox.Show(this,
-            "Save current edits and open the selected image?",
-            "Open Image",
-            MessageBoxButtons.YesNo, MessageBoxIcon.Question,
-            MessageBoxDefaultButton.Button1) != DialogResult.Yes)
-            return;
-
+    private void LoadSession(string fileEditId, string filePath)
+    {
         try
         {
-            // Save current session state + final image
+            // Save current session
             _canvas.CommitTextEdit();
-            ScreenshotExporter.SaveToFile(_session, GetLinkedSavePath());
-            SessionSerializer.Save(_session);
-            SavePreview();
+            AutoSaveNow();
             _session.OriginalImage.Dispose();
 
             // Load the selected image from its _edits/base.png if available, otherwise from the file
@@ -387,12 +478,18 @@ class ScreenshotEditorForm : Form
                 g.DrawImage(bmp, 0, 0);
             }
 
+            // Create _edits folder if it doesn't exist
+            if (!Directory.Exists(editDir))
+            {
+                Directory.CreateDirectory(editDir);
+                newImage.Save(Path.Combine(editDir, "base.png"), System.Drawing.Imaging.ImageFormat.Png);
+            }
+
             // Create new session
             _session = new EditorSession(newImage) { EditId = fileEditId };
 
             // If _edits folder has state.json, restore annotations and settings
-            if (Directory.Exists(editDir))
-                SessionSerializer.Restore(_session);
+            SessionSerializer.Restore(_session);
 
             // Replace canvas via container (handles remove/add/center)
             _canvas = new ScreenshotCanvas
@@ -402,8 +499,9 @@ class ScreenshotEditorForm : Form
             };
             _canvasContainer.SetCanvas(_canvas);
 
-            // Auto-save on undo/redo for new session
-            _session.UndoRedo.StateChanged += () => SessionSerializer.Save(_session);
+            // Wire auto-save for new session
+            _session.UndoRedo.StateChanged += ScheduleAutoSave;
+            _canvas.CanvasChanged += ScheduleAutoSave;
 
             _toolbar.Session = _session;
             _toolbar.Invalidate();
@@ -424,19 +522,22 @@ class ScreenshotEditorForm : Form
         try
         {
             _canvas.CommitTextEdit();
-
-            // Save final image to screenshots/
-            string path = GetLinkedSavePath();
-            ScreenshotExporter.SaveToFile(_session, path);
-
-            // Save state + preview to _edits folder
-            SessionSerializer.Save(_session);
-            SavePreview();
+            AutoSaveNow();
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Auto-save on close failed: {ex.Message}");
         }
+
+        // Hide instead of dispose — reuse the form next time
+        if (e.CloseReason == CloseReason.UserClosing)
+        {
+            e.Cancel = true;
+            Hide();
+            return;
+        }
+
+        _autoSaveTimer?.Dispose();
         base.OnFormClosing(e);
     }
 

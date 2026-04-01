@@ -13,9 +13,11 @@ class PopupAppContext : ApplicationContext
     private Icon _appIcon;
     private SettingsForm? _settingsForm;
     private readonly GlobalHotkey _globalHotkey;
+    private readonly TripleCtrlDetector _tripleCtrl;
     private readonly ToolStripItem _takeScreenshotItem;
     private readonly ToolStripItem _editScreenshotItem;
     private AlarmForm? _alarmForm;
+    private ScreenshotEditorForm? _editorForm;
 
     public PopupAppContext(string initialTitle, string initialMessage, string initialType, string sessionId = "", string cwd = "")
     {
@@ -53,6 +55,13 @@ class PopupAppContext : ApplicationContext
         if (appSettings.ScreenshotEnabled && !string.IsNullOrEmpty(appSettings.ScreenshotHotkey))
             _globalHotkey.Register(appSettings.ScreenshotHotkey);
 
+        // Triple Ctrl tap → edit last screenshot
+        _tripleCtrl = new TripleCtrlDetector();
+        _tripleCtrl.TripleTapped += () => _popupForm.Invoke(EditLastScreenshot);
+
+        // Sync Claude hooks with ProdToy settings on startup
+        SyncClaudeHooks(appSettings);
+
         // Start update checker
         UpdateChecker.UpdateAvailable += metadata =>
         {
@@ -88,16 +97,23 @@ class PopupAppContext : ApplicationContext
         return menu;
     }
 
+    private ScreenshotEditorForm GetOrCreateEditor()
+    {
+        if (_editorForm == null || _editorForm.IsDisposed)
+        {
+            // Create with a 1x1 placeholder — will be replaced immediately by LoadCapture/LoadFile
+            _editorForm = new ScreenshotEditorForm(new Bitmap(1, 1));
+        }
+        return _editorForm;
+    }
+
     private void TakeScreenshot()
     {
         var overlay = new ScreenshotOverlay();
         overlay.RegionCaptured += bitmap =>
         {
-            // Open the editor instead of saving immediately
-            var editor = new ScreenshotEditorForm(bitmap);
-            editor.ImageSaved += _ => { };
-            editor.ImageCopied += () => { };
-            editor.Show();
+            var editor = GetOrCreateEditor();
+            editor.LoadCapture(bitmap);
         };
         overlay.Show();
     }
@@ -117,18 +133,8 @@ class PopupAppContext : ApplicationContext
 
             if (lastFile == null) return;
 
-            Bitmap image;
-            using (var stream = File.OpenRead(lastFile))
-            using (var bmp = new Bitmap(stream))
-            {
-                image = new Bitmap(bmp.Width, bmp.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-                using var g = Graphics.FromImage(image);
-                g.DrawImage(bmp, 0, 0);
-            }
-
-            var editor = new ScreenshotEditorForm(image);
-            editor.ImageSaved += _ => { };
-            editor.Show();
+            var editor = GetOrCreateEditor();
+            editor.LoadFile(lastFile);
         }
         catch (Exception ex)
         {
@@ -300,6 +306,20 @@ class PopupAppContext : ApplicationContext
         _alarmForm.Show();
     }
 
+    private static void SyncClaudeHooks(AppSettingsData settings)
+    {
+        try
+        {
+            SettingsForm.UpdateClaudeHook("Stop", null, settings.HookStopEnabled);
+            SettingsForm.UpdateClaudeHook("Notification", "permission_prompt|idle_prompt|elicitation_dialog", settings.HookNotificationEnabled);
+            SettingsForm.UpdateClaudeHook("UserPromptSubmit", null, settings.HookUserPromptEnabled);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"SyncClaudeHooks failed: {ex.Message}");
+        }
+    }
+
     private void ExitApp()
     {
         _cts.Cancel();
@@ -308,8 +328,14 @@ class PopupAppContext : ApplicationContext
         AlarmStore.StopHistoryFlush();
         AlarmNotifier.Cleanup();
         _globalHotkey.Dispose();
+        _tripleCtrl.Dispose();
         _alarmForm?.Close();
         _settingsForm?.Close();
+        if (_editorForm != null && !_editorForm.IsDisposed)
+        {
+            _editorForm.Dispose();
+            _editorForm = null;
+        }
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
         _appIcon.Dispose();

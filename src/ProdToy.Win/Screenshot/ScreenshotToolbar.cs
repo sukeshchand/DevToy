@@ -17,6 +17,7 @@ class ScreenshotToolbar : Control
 
     public event Action? QuickCopyRequested;
     public event Action? CopyPathRequested;
+    public event Action? CopyPathTextRequested;
     public event Action<AnnotationTool>? ToolSelected;
     public event Action? UndoRequested;
     public event Action? RedoRequested;
@@ -33,6 +34,7 @@ class ScreenshotToolbar : Control
     public event Action<float>? ThicknessChanged;
     public event Action<float>? FontSizeChanged;
     public event Action? BorderToggled;
+    public event Action? BorderPopupRequested;
 
     public ScreenshotToolbar()
     {
@@ -55,37 +57,40 @@ class ScreenshotToolbar : Control
         _items.Clear();
 
         // Primary actions — most used, visually distinct
-        _items.Add(new ToolbarPrimaryButton("quickcopy", "\u2398", "Copy", "Copy to Clipboard (Ctrl+C)", () => QuickCopyRequested?.Invoke()));
-        _items.Add(new ToolbarPrimaryButton("copypath", "\u29C9", "Path", "Save & Copy Path (Ctrl+Shift+C)", () => CopyPathRequested?.Invoke()));
+        _items.Add(new ToolbarPrimaryButton("quickcopy", "\uE8C8", "Image", "Copy Image (Ctrl+C)", () => QuickCopyRequested?.Invoke()));
+        _items.Add(new ToolbarPrimaryButton("copypath", "\uE8C8", "File", "Copy File (Ctrl+Shift+C)", () => CopyPathRequested?.Invoke()));
+        _items.Add(new ToolbarPrimaryButton("copypathtext", "\uE8C8", "Path", "Copy Path (Ctrl+Shift+P)", () => CopyPathTextRequested?.Invoke()));
         AddSeparator();
 
         // Tools
-        AddButton("select", "\u2B9F", "Select (V)", () => ToolSelected?.Invoke(AnnotationTool.Select));
-        AddButton("pen", "\u270E", "Pen (P)", () => ToolSelected?.Invoke(AnnotationTool.Pen));
-        AddButton("marker", "\uFF2D", "Marker (M)", () => ToolSelected?.Invoke(AnnotationTool.Marker));
+        AddButton("select", "\uE8B0", "Select (V)", () => ToolSelected?.Invoke(AnnotationTool.Select));
+        AddButton("pen", "\uE70F", "Pen (P)", () => ToolSelected?.Invoke(AnnotationTool.Pen));
+        AddButton("marker", "\uE7E6", "Marker (M)", () => ToolSelected?.Invoke(AnnotationTool.Marker));
         AddSeparator();
-        AddButton("line", "\u2571", "Line (L)", () => ToolSelected?.Invoke(AnnotationTool.Line));
-        AddButton("arrow", "\u2197", "Arrow (A)", () => ToolSelected?.Invoke(AnnotationTool.Arrow));
-        AddButton("rect", "\u25A1", "Rectangle (R)", () => ToolSelected?.Invoke(AnnotationTool.Rectangle));
-        AddButton("ellipse", "\u25CB", "Ellipse (E)", () => ToolSelected?.Invoke(AnnotationTool.Ellipse));
-        AddButton("text", "T", "Text (T)", () => ToolSelected?.Invoke(AnnotationTool.Text));
-        AddButton("mask", "\u2588", "Mask Box (K)", () => ToolSelected?.Invoke(AnnotationTool.MaskBox));
-        AddButton("eraser", "\u25D5", "Eraser (X)", () => ToolSelected?.Invoke(AnnotationTool.Eraser));
+        AddButton("line", "\uF7AF", "Line (L)", () => ToolSelected?.Invoke(AnnotationTool.Line));
+        AddButton("arrow", "\uE8AD", "Arrow (A)", () => ToolSelected?.Invoke(AnnotationTool.Arrow));
+        AddButton("rect", "\uE739", "Rectangle (R)", () => ToolSelected?.Invoke(AnnotationTool.Rectangle));
+        AddButton("ellipse", "\uEA3A", "Ellipse (E)", () => ToolSelected?.Invoke(AnnotationTool.Ellipse));
+        AddButton("text", "\uE8D2", "Text (T)", () => ToolSelected?.Invoke(AnnotationTool.Text));
+        AddButton("mask", "***", "Mask Box (K)", () => ToolSelected?.Invoke(AnnotationTool.MaskBox));
+        AddButton("eraser", "\uE75C", "Eraser (X)", () => ToolSelected?.Invoke(AnnotationTool.Eraser));
         AddSeparator();
 
         // Undo/Redo
-        AddButton("undo", "\u21B6", "Undo (Ctrl+Z)", () => UndoRequested?.Invoke());
-        AddButton("redo", "\u21B7", "Redo (Ctrl+Y)", () => RedoRequested?.Invoke());
+        AddButton("undo", "\uE7A7", "Undo (Ctrl+Z)", () => UndoRequested?.Invoke());
+        AddButton("redo", "\uE7A6", "Redo (Ctrl+Y)", () => RedoRequested?.Invoke());
         AddSeparator();
 
         // Layer controls
-        AddButton("forward", "\u2B06", "Bring Forward", () => BringForwardRequested?.Invoke());
-        AddButton("backward", "\u2B07", "Send Backward", () => SendBackwardRequested?.Invoke());
-        AddButton("delete", "\u2716", "Delete (Del)", () => DeleteRequested?.Invoke());
+        AddButton("forward", "\uE74A", "Bring Forward", () => BringForwardRequested?.Invoke());
+        AddButton("backward", "\uE74B", "Send Backward", () => SendBackwardRequested?.Invoke());
+        AddButton("delete", "\uE74D", "Delete (Del)", () => DeleteRequested?.Invoke());
         AddSeparator();
 
-        // Border (opens popup)
-        AddButton("border", "\u25A3", "Border Settings (B)", () => BorderToggled?.Invoke());
+        // Border (split: toggle + dropdown arrow for popup)
+        _items.Add(new ToolbarBorderSplitButton("\uF573", "Border (B)",
+            () => BorderToggled?.Invoke(),
+            () => BorderPopupRequested?.Invoke()));
         AddSeparator();
 
         // Color: swatch showing current color, opens full picker
@@ -102,11 +107,8 @@ class ScreenshotToolbar : Control
         AddSeparator();
 
         // Actions
-        AddButton("save", "\u2713", "Save (Ctrl+S)", () => SaveRequested?.Invoke());
-        AddButton("saveas", "\u22EF", "Save As (Ctrl+Shift+S)", () => SaveAsRequested?.Invoke());
-        AddButton("copy", "\u2398", "Copy (Ctrl+C)", () => CopyRequested?.Invoke());
-        AddSeparator();
-        AddButton("cancel", "\u2715", "Close (Esc)", () => CancelRequested?.Invoke());
+        AddButton("saveas", "\uE792", "Save As (Ctrl+Shift+S)", () => SaveAsRequested?.Invoke());
+        AddButton("cancel", "\uE711", "Close (Esc)", () => CancelRequested?.Invoke());
 
         Width = CalculateWidth();
     }
@@ -188,6 +190,7 @@ class ScreenshotToolbar : Control
                     ToolbarButton btn => btn.Tooltip,
                     ToolbarPrimaryButton pb => pb.Tooltip,
                     ToolbarColorSwatch cs => cs.Tooltip,
+                    ToolbarBorderSplitButton bs => bs.Tooltip,
                     _ => null,
                 };
                 if (tooltip != null)
@@ -341,13 +344,100 @@ class ScreenshotToolbar : Control
                 _ => Color.FromArgb(200, 220, 220, 230),
             };
 
-            var font = FontPool.Get("Segoe UI Symbol", Id == "text" ? 13f : 11f, Id == "text" ? FontStyle.Bold : FontStyle.Regular);
+            var font = Id == "mask"
+                ? FontPool.Get("Segoe UI", 11f, FontStyle.Bold)
+                : FontPool.Get("Segoe Fluent Icons", 12f);
             using var brush = new SolidBrush(textColor);
             using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             g.DrawString(Icon, font, brush, rect, sf);
         }
 
         public override void HandleClick(Point pt, Rectangle rect, EditorSession? session) => _onClick();
+
+        private static GraphicsPath RoundedRectF(RectangleF r, float rad)
+        {
+            var path = new GraphicsPath();
+            float d = rad * 2;
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+    }
+
+    /// <summary>Split button: left side toggles border, right arrow opens popup.</summary>
+    class ToolbarBorderSplitButton : ToolbarItem
+    {
+        private readonly string _icon;
+        public string Tooltip { get; }
+        private readonly Action _onToggle;
+        private readonly Action _onPopup;
+        private const int TotalWidth = 44; // icon area + arrow area
+        private const int ArrowWidth = 14;
+
+        public ToolbarBorderSplitButton(string icon, string tooltip, Action onToggle, Action onPopup)
+        {
+            _icon = icon;
+            Tooltip = tooltip;
+            _onToggle = onToggle;
+            _onPopup = onPopup;
+        }
+
+        public override int GetWidth() => TotalWidth;
+
+        public override void Render(Graphics g, Rectangle rect, bool hover, EditorSession? session)
+        {
+            bool isActive = session?.BorderEnabled == true;
+            int iconW = rect.Width - ArrowWidth;
+            var iconRect = new Rectangle(rect.X, rect.Y, iconW, rect.Height);
+            var arrowRect = new Rectangle(rect.X + iconW, rect.Y, ArrowWidth, rect.Height);
+
+            // Icon area background
+            if (isActive)
+            {
+                using var activeBrush = new SolidBrush(Color.FromArgb(60, 80, 160, 255));
+                using var activePath = RoundedRectF(new RectangleF(iconRect.X, iconRect.Y, iconRect.Width, iconRect.Height), 4);
+                g.FillPath(activeBrush, activePath);
+                using var activeBorder = new Pen(Color.FromArgb(120, 80, 160, 255), 1f);
+                g.DrawPath(activeBorder, activePath);
+            }
+            else if (hover)
+            {
+                using var hoverBrush = new SolidBrush(Color.FromArgb(40, 255, 255, 255));
+                using var hoverPath = RoundedRectF(new RectangleF(iconRect.X, iconRect.Y, iconRect.Width, iconRect.Height), 4);
+                g.FillPath(hoverBrush, hoverPath);
+            }
+
+            // Arrow area background (always subtle hover)
+            if (hover)
+            {
+                using var arrowBg = new SolidBrush(Color.FromArgb(30, 255, 255, 255));
+                using var arrowPath = RoundedRectF(new RectangleF(arrowRect.X, arrowRect.Y, arrowRect.Width, arrowRect.Height), 4);
+                g.FillPath(arrowBg, arrowPath);
+            }
+
+            // Icon
+            var iconColor = Color.FromArgb(200, 220, 220, 230);
+            var font = FontPool.Get("Segoe Fluent Icons", 12f);
+            using var brush = new SolidBrush(iconColor);
+            using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            g.DrawString(_icon, font, brush, iconRect, sf);
+
+            // Down arrow
+            var arrowFont = FontPool.Get("Segoe Fluent Icons", 7f);
+            g.DrawString("\uE70D", arrowFont, brush, arrowRect, sf);
+        }
+
+        public override void HandleClick(Point pt, Rectangle rect, EditorSession? session)
+        {
+            int iconW = rect.Width - ArrowWidth;
+            if (pt.X >= rect.X + iconW)
+                _onPopup();
+            else
+                _onToggle();
+        }
 
         private static GraphicsPath RoundedRectF(RectangleF r, float rad)
         {
@@ -398,7 +488,7 @@ class ScreenshotToolbar : Control
             g.DrawPath(borderPen, bgPath);
 
             // Icon + label stacked
-            var iconFont = FontPool.Get("Segoe UI Symbol", 11f);
+            var iconFont = FontPool.Get("Segoe Fluent Icons", 12f);
             var labelFont = FontPool.Get("Segoe UI", 7f, FontStyle.Bold);
             using var textBrush = new SolidBrush(Color.White);
 

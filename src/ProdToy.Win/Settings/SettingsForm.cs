@@ -33,7 +33,7 @@ class SettingsForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(700, 560);
+        Size = new Size(800, 700);
         ShowInTaskbar = true;
         AutoScaleMode = AutoScaleMode.Dpi;
         BackColor = currentTheme.BgDark;
@@ -42,7 +42,7 @@ class SettingsForm : Form
         Icon = Themes.CreateAppIcon(currentTheme.Primary);
 
         int leftMargin = 24;
-        int contentWidth = 652;
+        int contentWidth = 752;
 
         // --- Title ---
         int y = 16;
@@ -70,11 +70,11 @@ class SettingsForm : Form
 
         // --- TabControl (owner-drawn) ---
         int tabCount = 6;
-        int tabWidth = contentWidth / tabCount;
+        int tabWidth = (contentWidth - 4) / tabCount;
         _tabControl = new ThemedTabControl(currentTheme)
         {
             Location = new Point(leftMargin, y),
-            Size = new Size(contentWidth, 440),
+            Size = new Size(contentWidth, 580),
             Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold),
             SizeMode = TabSizeMode.Fixed,
             ItemSize = new Size(tabWidth, 32),
@@ -662,6 +662,74 @@ class SettingsForm : Form
             HistoryEnabledChanged?.Invoke(historyCheck.Checked);
         };
         claudePage.Controls.Add(historyCheck);
+        cy += 30;
+
+        // --- Hooks sub-group ---
+        cy += 4;
+        var hooksLabel = CreateSubSectionLabel("Hooks", tp, cy, currentTheme);
+        claudePage.Controls.Add(hooksLabel);
+        cy += 22;
+
+        var hookSettings = AppSettings.Load();
+
+        var hookStopCheck = new CheckBox
+        {
+            Text = "On Stop — notify when Claude finishes a response",
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = currentTheme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = hookSettings.HookStopEnabled,
+            AutoSize = true,
+            Location = new Point(tp + 8, cy),
+            Cursor = Cursors.Hand,
+        };
+        hookStopCheck.CheckedChanged += (_, _) =>
+        {
+            var s = AppSettings.Load();
+            AppSettings.Save(s with { HookStopEnabled = hookStopCheck.Checked });
+            UpdateClaudeHook("Stop", null, hookStopCheck.Checked);
+        };
+        claudePage.Controls.Add(hookStopCheck);
+        cy += 24;
+
+        var hookNotifCheck = new CheckBox
+        {
+            Text = "On Notification — notify on permission/idle/question prompts",
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = currentTheme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = hookSettings.HookNotificationEnabled,
+            AutoSize = true,
+            Location = new Point(tp + 8, cy),
+            Cursor = Cursors.Hand,
+        };
+        hookNotifCheck.CheckedChanged += (_, _) =>
+        {
+            var s = AppSettings.Load();
+            AppSettings.Save(s with { HookNotificationEnabled = hookNotifCheck.Checked });
+            UpdateClaudeHook("Notification", "permission_prompt|idle_prompt|elicitation_dialog", hookNotifCheck.Checked);
+        };
+        claudePage.Controls.Add(hookNotifCheck);
+        cy += 24;
+
+        var hookPromptCheck = new CheckBox
+        {
+            Text = "On User Prompt — save question when you send a message",
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = currentTheme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = hookSettings.HookUserPromptEnabled,
+            AutoSize = true,
+            Location = new Point(tp + 8, cy),
+            Cursor = Cursors.Hand,
+        };
+        hookPromptCheck.CheckedChanged += (_, _) =>
+        {
+            var s = AppSettings.Load();
+            AppSettings.Save(s with { HookUserPromptEnabled = hookPromptCheck.Checked });
+            UpdateClaudeHook("UserPromptSubmit", null, hookPromptCheck.Checked);
+        };
+        claudePage.Controls.Add(hookPromptCheck);
         cy += 30;
 
         // --- Status Line group ---
@@ -1269,6 +1337,117 @@ class SettingsForm : Form
             Location = new Point(x, y),
             Size = new Size(width, 1),
         };
+    }
+
+    /// <summary>
+    /// Adds or removes the ProdToy hook from a Claude Code hook event in settings.json.
+    /// </summary>
+    internal static void UpdateClaudeHook(string eventName, string? matcher, bool enabled)
+    {
+        try
+        {
+            string path = AppPaths.ClaudeSettingsFile;
+            if (!File.Exists(path)) return;
+
+            var root = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))?.AsObject();
+            if (root == null) return;
+
+            var hooksNode = root["hooks"]?.AsObject();
+            if (hooksNode == null) return;
+
+            if (hooksNode[eventName] is not System.Text.Json.Nodes.JsonArray eventArray) return;
+
+            if (!enabled)
+            {
+                // Remove ProdToy hook entries from this event
+                for (int i = eventArray.Count - 1; i >= 0; i--)
+                {
+                    if (eventArray[i] is not System.Text.Json.Nodes.JsonObject ruleSet) continue;
+                    if (ruleSet["hooks"] is not System.Text.Json.Nodes.JsonArray hooksArray) continue;
+
+                    for (int j = hooksArray.Count - 1; j >= 0; j--)
+                    {
+                        if (IsProdToyHookCommand(hooksArray[j]?["command"]?.GetValue<string>()))
+                            hooksArray.RemoveAt(j);
+                    }
+
+                    // Remove the rule set if no hooks remain
+                    if (hooksArray.Count == 0)
+                        eventArray.RemoveAt(i);
+                }
+
+                // Remove the event entirely if empty
+                if (eventArray.Count == 0)
+                    hooksNode.Remove(eventName);
+            }
+            else
+            {
+                // Re-add ProdToy hook if not already present
+                bool exists = false;
+                foreach (var ruleSet in eventArray)
+                {
+                    if (ruleSet?["hooks"] is System.Text.Json.Nodes.JsonArray hooksArray)
+                    {
+                        foreach (var hook in hooksArray)
+                        {
+                            if (IsProdToyHookCommand(hook?["command"]?.GetValue<string>()))
+                            { exists = true; break; }
+                        }
+                    }
+                    if (exists) break;
+                }
+
+                if (!exists)
+                {
+                    string hookCmd = $"powershell.exe -ExecutionPolicy Bypass -File \"{Path.Combine(AppPaths.ClaudeHooksDir, "Show-ProdToy.ps1")}\"";
+                    var hookEntry = new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["type"] = "command",
+                        ["command"] = hookCmd,
+                    };
+
+                    // Find a matching rule set or create one
+                    bool added = false;
+                    foreach (var ruleSet in eventArray)
+                    {
+                        if (ruleSet is not System.Text.Json.Nodes.JsonObject ruleObj) continue;
+                        string? existingMatcher = ruleObj["matcher"]?.GetValue<string>();
+                        if (existingMatcher == matcher)
+                        {
+                            var hooksArray = ruleObj["hooks"]?.AsArray() ?? new System.Text.Json.Nodes.JsonArray();
+                            hooksArray.Add(System.Text.Json.Nodes.JsonNode.Parse(hookEntry.ToJsonString()));
+                            ruleObj["hooks"] = hooksArray;
+                            added = true;
+                            break;
+                        }
+                    }
+
+                    if (!added)
+                    {
+                        var newRuleSet = new System.Text.Json.Nodes.JsonObject();
+                        if (matcher != null) newRuleSet["matcher"] = matcher;
+                        newRuleSet["hooks"] = new System.Text.Json.Nodes.JsonArray
+                        {
+                            System.Text.Json.Nodes.JsonNode.Parse(hookEntry.ToJsonString())
+                        };
+                        eventArray.Add(newRuleSet);
+                    }
+                }
+            }
+
+            var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+            File.WriteAllText(path, root.ToJsonString(options), System.Text.Encoding.UTF8);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"UpdateClaudeHook failed: {ex.Message}");
+        }
+    }
+
+    private static bool IsProdToyHookCommand(string? command)
+    {
+        if (string.IsNullOrEmpty(command)) return false;
+        return command.Contains("Show-ProdToy") || command.Contains("Show-DevToy");
     }
 }
 

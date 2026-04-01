@@ -207,7 +207,7 @@ class MaskBoxObject : ShapeObject
             int brightness = (StrokeColor.R * 299 + StrokeColor.G * 587 + StrokeColor.B * 114) / 1000;
             var dotColor = Color.FromArgb(80, brightness > 128 ? 0 : 255, brightness > 128 ? 0 : 255, brightness > 128 ? 0 : 255);
 
-            float fontSize = Math.Max(8f, Math.Min(rect.Height * 0.6f, 20f));
+            float fontSize = Math.Max(8f, rect.Height * 0.6f);
             using var font = new Font("Segoe UI", fontSize, FontStyle.Regular, GraphicsUnit.Pixel);
             using var dotBrush = new SolidBrush(dotColor);
 

@@ -550,6 +550,12 @@ class ScreenshotCanvas : Control
         }
         else if (_selectedRegion.HasValue)
         {
+            var deleteRegion = new ToolStripMenuItem("Delete Region");
+            deleteRegion.Click += (_, _) => DeleteSelectedRegion();
+            menu.Items.Add(deleteRegion);
+
+            menu.Items.Add(new ToolStripSeparator());
+
             var cutItem = new ToolStripMenuItem("Cut into Layer");
             cutItem.Click += (_, _) => RegionToLayer(clearOriginal: true);
             menu.Items.Add(cutItem);
@@ -571,6 +577,53 @@ class ScreenshotCanvas : Control
         }
 
         menu.Show(this, location);
+    }
+
+    public bool HasSelectedRegion => _selectedRegion.HasValue;
+
+    public void DeleteSelectedRegion()
+    {
+        if (_session == null || !_selectedRegion.HasValue) return;
+
+        var rect = _selectedRegion.Value;
+        int x = (int)rect.X, y = (int)rect.Y, w = (int)rect.Width, h = (int)rect.Height;
+        x = Math.Max(0, x);
+        y = Math.Max(0, y);
+        w = Math.Min(w, _session.CanvasSize.Width - x);
+        h = Math.Min(h, _session.CanvasSize.Height - y);
+        if (w <= 0 || h <= 0) return;
+
+        // Snapshot for undo
+        var beforeSnapshot = (Bitmap)_session.OriginalImage.Clone();
+
+        // Fill the region on OriginalImage with background color
+        var imgOff = _session.ImageOffset;
+        int imgX = x - imgOff.X;
+        int imgY = y - imgOff.Y;
+        int imgW = Math.Min(w, _session.OriginalImage.Width - imgX);
+        int imgH = Math.Min(h, _session.OriginalImage.Height - imgY);
+
+        if (imgX >= 0 && imgY >= 0 && imgW > 0 && imgH > 0)
+        {
+            using (var g = Graphics.FromImage(_session.OriginalImage))
+            {
+                using var bgBrush = new SolidBrush(_session.CanvasBackgroundColor);
+                g.FillRectangle(bgBrush, imgX, imgY, imgW, imgH);
+            }
+
+            var affectedRect = new System.Drawing.Rectangle(imgX, imgY, imgW, imgH);
+            var action = new BitmapEraseAction(_session.OriginalImage, beforeSnapshot, affectedRect);
+            action.CaptureAfterState();
+            _session.UndoRedo.Execute(action);
+        }
+        else
+        {
+            beforeSnapshot.Dispose();
+        }
+
+        _selectedRegion = null;
+        Invalidate();
+        CanvasChanged?.Invoke();
     }
 
     private void RegionToLayer(bool clearOriginal)
