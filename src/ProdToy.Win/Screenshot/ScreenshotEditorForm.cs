@@ -135,6 +135,7 @@ class ScreenshotEditorForm : Form
 
         // When canvas resizes due to dropped image, sync container
         _canvas.CanvasResizeRequested += _ => _canvasContainer.SyncCanvasSize();
+        _canvas.ToolAutoSwitched += () => _toolbar.Invalidate();
 
         // Auto-save on every undo/redo action and canvas change
         _autoSaveTimer = new System.Windows.Forms.Timer { Interval = 300 };
@@ -512,6 +513,7 @@ class ScreenshotEditorForm : Form
             // Wire auto-save for new session
             _session.UndoRedo.StateChanged += ScheduleAutoSave;
             _canvas.CanvasChanged += ScheduleAutoSave;
+            _canvas.ToolAutoSwitched += () => _toolbar.Invalidate();
 
             _toolbar.Session = _session;
             _toolbar.Invalidate();

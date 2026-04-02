@@ -23,6 +23,7 @@ class SettingsForm : Form
     public event Action<string>? ScreenshotHotkeyChanged;
     public event Action<string>? GlobalFontChanged;
     public event Action<bool>? ScreenshotEnabledChanged;
+    public event Action<bool>? TripleCtrlChanged;
 
     public SettingsForm(PopupTheme currentTheme, DateTime snoozeUntil)
     {
@@ -420,6 +421,33 @@ class SettingsForm : Form
             AppSettings.Save(s with { ScreenshotEnabled = enabled });
             ScreenshotEnabledChanged?.Invoke(enabled);
         };
+
+        sc += 14;
+        capturePage.Controls.Add(CreateSeparator(tp, sc, tabInner));
+        sc += 14;
+
+        var tripleCtrlLabel = CreateSectionLabel("QUICK OPEN", tp, sc);
+        capturePage.Controls.Add(tripleCtrlLabel);
+        sc += 26;
+
+        var tripleCtrlCheck = new CheckBox
+        {
+            Text = "Triple Ctrl tap to open last screenshot editor",
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = currentTheme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = captureSettings.TripleCtrlEnabled,
+            AutoSize = true,
+            Location = new Point(tp, sc),
+            Cursor = Cursors.Hand,
+        };
+        tripleCtrlCheck.CheckedChanged += (_, _) =>
+        {
+            var settings = AppSettings.Load();
+            AppSettings.Save(settings with { TripleCtrlEnabled = tripleCtrlCheck.Checked });
+            TripleCtrlChanged?.Invoke(tripleCtrlCheck.Checked);
+        };
+        capturePage.Controls.Add(tripleCtrlCheck);
 
         // =============================================
         // TAB 2: Appearance

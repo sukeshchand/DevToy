@@ -218,18 +218,27 @@ class MaskBoxObject : ShapeObject
             int brightness = (StrokeColor.R * 299 + StrokeColor.G * 587 + StrokeColor.B * 114) / 1000;
             var dotColor = Color.FromArgb(80, brightness > 128 ? 0 : 255, brightness > 128 ? 0 : 255, brightness > 128 ? 0 : 255);
 
-            float fontSize = Math.Max(8f, rect.Height * 0.6f);
+            float fontSize = Math.Max(8f, rect.Height * 0.9f);
             using var font = new Font("Segoe UI", fontSize, FontStyle.Regular, GraphicsUnit.Pixel);
             using var dotBrush = new SolidBrush(dotColor);
 
-            string dot = "\u25CF"; // ●
-            var dotSize = g.MeasureString(dot, font);
-            float spacing = dotSize.Width * 0.85f;
-            float y = rect.Y + (rect.Height - dotSize.Height) / 2f;
+            // Draw asterisks as 3 crossed lines (truly centered, font-independent)
+            float starSize = rect.Height * 0.35f;
+            float spacing = starSize * 2.2f;
+            float cy = rect.Y + rect.Height / 2f;
+            using var starPen = new Pen(Color.FromArgb(80, 255, 255, 255), Math.Max(1.5f, starSize * 0.18f));
+            starPen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+            starPen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
 
-            for (float x = rect.X + spacing * 0.3f; x + dotSize.Width * 0.5f < rect.Right; x += spacing)
+            for (float cx = rect.X + spacing * 0.5f; cx < rect.Right; cx += spacing)
             {
-                g.DrawString(dot, font, dotBrush, x, y);
+                // Vertical line
+                g.DrawLine(starPen, cx, cy - starSize, cx, cy + starSize);
+                // Diagonal lines (60° rotated)
+                float dx60 = starSize * 0.866f; // cos(30°)
+                float dy60 = starSize * 0.5f;   // sin(30°)
+                g.DrawLine(starPen, cx - dx60, cy - dy60, cx + dx60, cy + dy60);
+                g.DrawLine(starPen, cx - dx60, cy + dy60, cx + dx60, cy - dy60);
             }
         }
         g.Restore(state);

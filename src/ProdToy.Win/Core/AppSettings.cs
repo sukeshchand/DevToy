@@ -63,7 +63,7 @@ record AppSettingsData
 
     // Claude hook toggles
     [JsonPropertyName("hookStopEnabled")] public bool HookStopEnabled { get; init; } = true;
-    [JsonPropertyName("hookNotificationEnabled")] public bool HookNotificationEnabled { get; init; } = true;
+    [JsonPropertyName("hookNotificationEnabled")] public bool HookNotificationEnabled { get; init; } = false;
     [JsonPropertyName("hookUserPromptEnabled")] public bool HookUserPromptEnabled { get; init; } = true;
 
     [JsonPropertyName("screenshotEnabled")]
@@ -71,6 +71,9 @@ record AppSettingsData
 
     [JsonPropertyName("screenshotHotkey")]
     public string ScreenshotHotkey { get; init; } = "Ctrl+Q";
+
+    [JsonPropertyName("tripleCtrlEnabled")]
+    public bool TripleCtrlEnabled { get; init; } = true;
 
     [JsonPropertyName("screenshotLastColor")]
     public string ScreenshotLastColor { get; init; } = "Red";

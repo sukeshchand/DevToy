@@ -12,6 +12,7 @@ class ScreenshotCanvas : Control
     private bool _isDrawing;
     private AnnotationObject? _drawingObject;
     private PointF _lastDragPos;
+    private bool _hasDrawnOnce;
 
     // Selection/move state
     private bool _isMoving;
@@ -46,10 +47,11 @@ class ScreenshotCanvas : Control
     private bool _isCropAdjusting;  // Phase 2: user adjusts corners
     private PointF _cropDragStart;
     private PointF[] _cropCorners = new PointF[4]; // TL, TR, BR, BL
-    private int _dragCornerIndex = -1; // -1=none, 0-3=corner, 4=move all
+    private int _dragCornerIndex = -1; // -1=none, 0-3=corner, 4-7=midpoint, 8=move all
 
     public event Action? CanvasChanged;
     public event Action? SelectionChanged;
+    public event Action? ToolAutoSwitched;
 
     /// <summary>Fires when canvas needs to be resized (e.g. to fit a dropped image).</summary>
     public event Action<Size>? CanvasResizeRequested;
@@ -226,7 +228,6 @@ class ScreenshotCanvas : Control
         if (_isCropDragging || _isCropAdjusting)
         {
             var cc = GetNormalizedCropCorners();
-            var cropColor = Color.FromArgb(220, 220, 50, 50);
 
             // Dim area outside the quad using GraphicsPath clipping
             using var dimPath = new GraphicsPath();
@@ -235,33 +236,53 @@ class ScreenshotCanvas : Control
             using var dimBrush = new SolidBrush(Color.FromArgb(120, 0, 0, 0));
             g.FillPath(dimBrush, dimPath);
 
-            // Quad border — red
-            using var cropPen = new Pen(cropColor, 2f);
-            g.DrawPolygon(cropPen, cc);
+            // Quad border — black + white dashed double line (visible on all backgrounds)
+            using var outerPen = new Pen(Color.Black, 4f);
+            g.DrawPolygon(outerPen, cc);
+            using var innerPen = new Pen(Color.White, 2.5f);
+            innerPen.DashStyle = DashStyle.Dash;
+            innerPen.DashPattern = new float[] { 5f, 5f };
+            g.DrawPolygon(innerPen, cc);
 
             // Perspective grid (3x3) using bilinear interpolation
-            using var gridPen = new Pen(Color.FromArgb(60, 220, 50, 50), 0.5f);
+            using var gridPenBlack = new Pen(Color.FromArgb(80, 0, 0, 0), 1.5f);
+            using var gridPenWhite = new Pen(Color.FromArgb(120, 255, 255, 255), 1f);
+            gridPenWhite.DashStyle = DashStyle.Dash;
+            gridPenWhite.DashPattern = new float[] { 4f, 4f };
             for (int i = 1; i <= 2; i++)
             {
                 float t = i / 3f;
-                // Horizontal grid line
                 var hl = Lerp(cc[0], cc[3], t);
                 var hr = Lerp(cc[1], cc[2], t);
-                g.DrawLine(gridPen, hl, hr);
-                // Vertical grid line
+                g.DrawLine(gridPenBlack, hl, hr);
+                g.DrawLine(gridPenWhite, hl, hr);
                 var vt = Lerp(cc[0], cc[1], t);
                 var vb = Lerp(cc[3], cc[2], t);
-                g.DrawLine(gridPen, vt, vb);
+                g.DrawLine(gridPenBlack, vt, vb);
+                g.DrawLine(gridPenWhite, vt, vb);
             }
 
-            // 4 corner handles — red filled with white border
+            // 8 handles: 4 corners + 4 midpoints
             float hs = 8f, hh = hs / 2;
-            using var handleFill = new SolidBrush(cropColor);
-            using var handleBorder = new Pen(Color.White, 1f);
+            using var handleFill = new SolidBrush(Color.Black);
+            using var handleBorder = new Pen(Color.White, 1.5f);
+            // Corners
             foreach (var c in cc)
             {
                 g.FillRectangle(handleFill, c.X - hh, c.Y - hh, hs, hs);
                 g.DrawRectangle(handleBorder, c.X - hh, c.Y - hh, hs, hs);
+            }
+            // Midpoints: top, right, bottom, left
+            var midpoints = new[] {
+                Lerp(cc[0], cc[1], 0.5f), // top mid
+                Lerp(cc[1], cc[2], 0.5f), // right mid
+                Lerp(cc[2], cc[3], 0.5f), // bottom mid
+                Lerp(cc[3], cc[0], 0.5f), // left mid
+            };
+            foreach (var m in midpoints)
+            {
+                g.FillRectangle(handleFill, m.X - hh, m.Y - hh, hs, hs);
+                g.DrawRectangle(handleBorder, m.X - hh, m.Y - hh, hs, hs);
             }
 
             // Size label (estimated output dimensions)
@@ -540,6 +561,24 @@ class ScreenshotCanvas : Control
         if (_session.CurrentTool == AnnotationTool.Select)
         {
             UpdateCursor(pt);
+        }
+
+        // Update cursor for crop handles
+        if (_session.CurrentTool == AnnotationTool.Crop && _isCropAdjusting)
+        {
+            int hit = HitTestCropCorner(pt);
+            Cursor = hit switch
+            {
+                0 => Cursors.SizeNWSE,  // TL
+                1 => Cursors.SizeNESW,  // TR
+                2 => Cursors.SizeNWSE,  // BR
+                3 => Cursors.SizeNESW,  // BL
+                4 => Cursors.SizeNS,    // top mid
+                5 => Cursors.SizeWE,    // right mid
+                6 => Cursors.SizeNS,    // bottom mid
+                7 => Cursors.SizeWE,    // left mid
+                _ => PointInQuad(pt, _cropCorners) ? Cursors.SizeAll : Cursors.Cross,
+            };
         }
 
         // Track eraser cursor position for visual feedback
@@ -856,7 +895,7 @@ class ScreenshotCanvas : Control
             // Check if inside the quad — move all corners
             if (PointInQuad(pt, _cropCorners))
             {
-                _dragCornerIndex = 4; // move all
+                _dragCornerIndex = 8; // move all
                 _lastDragPos = pt;
                 return;
             }
@@ -889,15 +928,32 @@ class ScreenshotCanvas : Control
 
         float dx = pt.X - _lastDragPos.X;
         float dy = pt.Y - _lastDragPos.Y;
+        bool shift = (ModifierKeys & Keys.Shift) != 0;
 
         if (_dragCornerIndex >= 0 && _dragCornerIndex <= 3)
         {
-            // Move single corner
+            // Move single corner — Shift constrains to dominant axis
+            if (shift) { if (Math.Abs(dx) > Math.Abs(dy)) dy = 0; else dx = 0; }
             _cropCorners[_dragCornerIndex] = new PointF(
                 _cropCorners[_dragCornerIndex].X + dx,
                 _cropCorners[_dragCornerIndex].Y + dy);
         }
-        else if (_dragCornerIndex == 4)
+        else if (_dragCornerIndex >= 4 && _dragCornerIndex <= 7)
+        {
+            // Move midpoint = move both adjacent corners (parallel edge shift)
+            // 4=top(0,1), 5=right(1,2), 6=bottom(2,3), 7=left(3,0)
+            // Shift: top/bottom → vertical only, left/right → horizontal only
+            if (shift)
+            {
+                if (_dragCornerIndex == 4 || _dragCornerIndex == 6) dx = 0; // top/bottom: vertical only
+                if (_dragCornerIndex == 5 || _dragCornerIndex == 7) dy = 0; // left/right: horizontal only
+            }
+            int c1 = _dragCornerIndex - 4;
+            int c2 = (_dragCornerIndex - 3) % 4;
+            _cropCorners[c1] = new PointF(_cropCorners[c1].X + dx, _cropCorners[c1].Y + dy);
+            _cropCorners[c2] = new PointF(_cropCorners[c2].X + dx, _cropCorners[c2].Y + dy);
+        }
+        else if (_dragCornerIndex == 8)
         {
             // Move all corners
             for (int i = 0; i < 4; i++)
@@ -926,11 +982,25 @@ class ScreenshotCanvas : Control
 
     private int HitTestCropCorner(PointF pt, float tolerance = 14f)
     {
+        // 0-3: corners (TL, TR, BR, BL)
         for (int i = 0; i < 4; i++)
         {
             if (Math.Abs(pt.X - _cropCorners[i].X) < tolerance &&
                 Math.Abs(pt.Y - _cropCorners[i].Y) < tolerance)
                 return i;
+        }
+        // 4-7: midpoints (top, right, bottom, left)
+        var midpoints = new[] {
+            Lerp(_cropCorners[0], _cropCorners[1], 0.5f),
+            Lerp(_cropCorners[1], _cropCorners[2], 0.5f),
+            Lerp(_cropCorners[2], _cropCorners[3], 0.5f),
+            Lerp(_cropCorners[3], _cropCorners[0], 0.5f),
+        };
+        for (int i = 0; i < 4; i++)
+        {
+            if (Math.Abs(pt.X - midpoints[i].X) < tolerance &&
+                Math.Abs(pt.Y - midpoints[i].Y) < tolerance)
+                return i + 4;
         }
         return -1;
     }
@@ -969,22 +1039,43 @@ class ScreenshotCanvas : Control
     {
         if (_session == null) return;
 
-        // Flatten the full canvas (base image + annotations) into one bitmap
-        var flattened = ScreenshotExporter.Flatten(_session);
-
         // Compute output dimensions from the quad
         float outW = Math.Max(Dist(_cropCorners[0], _cropCorners[1]), Dist(_cropCorners[3], _cropCorners[2]));
         float outH = Math.Max(Dist(_cropCorners[0], _cropCorners[3]), Dist(_cropCorners[1], _cropCorners[2]));
         int w = Math.Max(1, (int)Math.Round(outW));
         int h = Math.Max(1, (int)Math.Round(outH));
 
-        // Perspective warp
-        var result = PerspectiveWarp(flattened, _cropCorners, w, h);
-        flattened.Dispose();
+        // Build source image: canvas bg + OriginalImage at offset (no annotations)
+        var source = new Bitmap(_session.CanvasSize.Width, _session.CanvasSize.Height,
+            System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(source))
+        {
+            using var bgBrush = new SolidBrush(_session.CanvasBackgroundColor);
+            g.FillRectangle(bgBrush, 0, 0, source.Width, source.Height);
+            g.DrawImage(_session.OriginalImage, _session.ImageOffset.X, _session.ImageOffset.Y);
+        }
 
-        // Execute through undo system — annotations baked into warp, so after-annotations is empty
+        // Perspective warp only the base image
+        var result = PerspectiveWarp(source, _cropCorners, w, h);
+        source.Dispose();
+
+        // Compute bounding box of quad for annotation offset
+        float minX = Math.Min(Math.Min(_cropCorners[0].X, _cropCorners[1].X),
+                              Math.Min(_cropCorners[2].X, _cropCorners[3].X));
+        float minY = Math.Min(Math.Min(_cropCorners[0].Y, _cropCorners[1].Y),
+                              Math.Min(_cropCorners[2].Y, _cropCorners[3].Y));
+
+        // Shift annotations by crop offset (preserve, don't bake)
+        var shiftedAnnotations = _session.Annotations.Select(a =>
+        {
+            var clone = a.Clone();
+            clone.Move(-minX, -minY);
+            return clone;
+        }).ToList();
+
+        // Execute through undo system
         var action = new CropAction(_session, result, new Size(w, h),
-            new List<AnnotationObject>(), "perspective", (PointF[])_cropCorners.Clone());
+            shiftedAnnotations, "perspective", (PointF[])_cropCorners.Clone());
         _session.UndoRedo.Execute(action);
 
         Size = new Size(w, h);
@@ -1261,6 +1352,16 @@ class ScreenshotCanvas : Control
         {
             _session.AddAnnotation(_drawingObject);
             CanvasChanged?.Invoke();
+
+            // First draw after opening: switch to Select tool
+            if (!_hasDrawnOnce)
+            {
+                _hasDrawnOnce = true;
+                _session.CurrentTool = AnnotationTool.Select;
+                _session.DeselectAll();
+                UpdateToolCursor();
+                ToolAutoSwitched?.Invoke();
+            }
         }
 
         _drawingObject = null;

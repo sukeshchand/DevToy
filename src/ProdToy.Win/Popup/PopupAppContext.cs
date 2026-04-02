@@ -55,9 +55,13 @@ class PopupAppContext : ApplicationContext
         if (appSettings.ScreenshotEnabled && !string.IsNullOrEmpty(appSettings.ScreenshotHotkey))
             _globalHotkey.Register(appSettings.ScreenshotHotkey);
 
-        // Triple Ctrl tap → edit last screenshot
+        // Triple Ctrl tap → edit last screenshot (if enabled)
         _tripleCtrl = new TripleCtrlDetector();
-        _tripleCtrl.TripleTapped += () => _popupForm.Invoke(EditLastScreenshot);
+        _tripleCtrl.TripleTapped += () =>
+        {
+            if (AppSettings.Load().TripleCtrlEnabled)
+                _popupForm.Invoke(EditLastScreenshot);
+        };
 
         // Sync Claude hooks with ProdToy settings on startup
         SyncClaudeHooks(appSettings);
