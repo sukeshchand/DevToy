@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ProdToy;
 
@@ -8,6 +9,7 @@ static class UpdateChecker
 {
     private static System.Threading.Timer? _timer;
     private static UpdateMetadata? _latestMetadata;
+    private static readonly HttpClient _http = CreateHttpClient();
 
     public static event Action<UpdateMetadata>? UpdateAvailable;
 
@@ -27,27 +29,52 @@ static class UpdateChecker
 
     public static void CheckNow() => CheckForUpdate();
 
+    private static HttpClient CreateHttpClient()
+    {
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("ProdToy/" + AppVersion.Current);
+        client.Timeout = TimeSpan.FromSeconds(15);
+        return client;
+    }
+
+    /// <summary>
+    /// Resolves the effective update location. If empty, returns the default GitHub URL.
+    /// </summary>
+    internal static string ResolveUpdateLocation(string updateLocation)
+    {
+        return string.IsNullOrWhiteSpace(updateLocation)
+            ? AppSettingsData.DefaultUpdateLocation
+            : updateLocation.Trim();
+    }
+
+    private static bool IsHttpUrl(string location)
+    {
+        return location.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || location.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static void CheckForUpdate()
     {
         try
         {
             var settings = AppSettings.Load();
-            if (string.IsNullOrWhiteSpace(settings.UpdateLocation))
-                return;
+            string location = ResolveUpdateLocation(settings.UpdateLocation);
 
-            string metadataPath = Path.Combine(settings.UpdateLocation, "metadata.json");
-            if (!File.Exists(metadataPath))
-                return;
+            UpdateMetadata? metadata;
 
-            string json = File.ReadAllText(metadataPath);
-            var metadata = JsonSerializer.Deserialize<UpdateMetadata>(json);
+            if (IsHttpUrl(location))
+                metadata = CheckFromUrl(location);
+            else
+                metadata = CheckFromLocalPath(location);
+
             if (metadata == null || string.IsNullOrWhiteSpace(metadata.Version))
                 return;
 
             bool updateAvailable = IsNewerVersion(metadata.Version, AppVersion.Current);
 
-            // Fire-and-forget: log the enquiry silently
-            _ = LogUpdateEnquiryAsync(settings.UpdateLocation, metadata.Version, updateAvailable);
+            // Fire-and-forget: log the enquiry silently (only for local paths)
+            if (!IsHttpUrl(location))
+                _ = LogUpdateEnquiryAsync(location, metadata.Version, updateAvailable);
 
             if (updateAvailable)
             {
@@ -59,6 +86,74 @@ static class UpdateChecker
         {
             Debug.WriteLine($"Update check failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Checks for updates from a local/network path containing metadata.json and ProdToy.exe.
+    /// </summary>
+    private static UpdateMetadata? CheckFromLocalPath(string location)
+    {
+        string metadataPath = Path.Combine(location, "metadata.json");
+        if (!File.Exists(metadataPath))
+            return null;
+
+        string json = File.ReadAllText(metadataPath);
+        return JsonSerializer.Deserialize<UpdateMetadata>(json);
+    }
+
+    /// <summary>
+    /// Checks for updates from an HTTP URL.
+    /// Supports GitHub API format (tag_name, assets[]) and plain metadata.json format.
+    /// </summary>
+    private static UpdateMetadata? CheckFromUrl(string url)
+    {
+        string json = _http.GetStringAsync(url).GetAwaiter().GetResult();
+        var root = JsonNode.Parse(json);
+        if (root == null) return null;
+
+        // GitHub API response: has "tag_name" and "assets" array
+        var tagName = root["tag_name"]?.GetValue<string>();
+        if (tagName != null)
+            return ParseGitHubRelease(root, tagName);
+
+        // Plain metadata.json format served over HTTP
+        return JsonSerializer.Deserialize<UpdateMetadata>(json);
+    }
+
+    /// <summary>
+    /// Parses a GitHub releases API response into UpdateMetadata.
+    /// </summary>
+    private static UpdateMetadata ParseGitHubRelease(JsonNode root, string tagName)
+    {
+        // Strip leading 'v' from tag (e.g. "v1.0.196" -> "1.0.196")
+        string version = tagName.StartsWith('v') ? tagName[1..] : tagName;
+
+        string releaseNotes = root["body"]?.GetValue<string>() ?? "";
+        string publishedAt = root["published_at"]?.GetValue<string>() ?? "";
+
+        // Find ProdToy.exe in assets
+        string downloadUrl = "";
+        var assets = root["assets"]?.AsArray();
+        if (assets != null)
+        {
+            foreach (var asset in assets)
+            {
+                var name = asset?["name"]?.GetValue<string>();
+                if (string.Equals(name, "ProdToy.exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    downloadUrl = asset?["browser_download_url"]?.GetValue<string>() ?? "";
+                    break;
+                }
+            }
+        }
+
+        return new UpdateMetadata
+        {
+            Version = version,
+            ReleaseNotes = releaseNotes,
+            PublishedAt = publishedAt,
+            DownloadUrl = downloadUrl,
+        };
     }
 
     private static async Task LogUpdateEnquiryAsync(string updateLocation, string remoteVersion, bool updateAvailable)

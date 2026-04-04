@@ -1019,7 +1019,7 @@ class SettingsForm : Form
 
         var updatePathLabel = new Label
         {
-            Text = "Update location (network path):",
+            Text = "Update location (URL or network path):",
             Font = new Font("Segoe UI", 9f),
             ForeColor = currentTheme.TextPrimary,
             AutoSize = true,
@@ -1041,8 +1041,12 @@ class SettingsForm : Form
         };
         updatePathBox.LostFocus += (_, _) =>
         {
+            var loc = string.IsNullOrWhiteSpace(updatePathBox.Text)
+                ? AppSettingsData.DefaultUpdateLocation
+                : updatePathBox.Text.Trim();
+            updatePathBox.Text = loc;
             var settings = AppSettings.Load();
-            AppSettings.Save(settings with { UpdateLocation = updatePathBox.Text.Trim() });
+            AppSettings.Save(settings with { UpdateLocation = loc });
         };
         aboutPage.Controls.Add(updatePathBox);
 
@@ -1061,8 +1065,12 @@ class SettingsForm : Form
         savePathButton.FlatAppearance.MouseOverBackColor = currentTheme.Primary;
         savePathButton.Click += (_, _) =>
         {
+            var loc = string.IsNullOrWhiteSpace(updatePathBox.Text)
+                ? AppSettingsData.DefaultUpdateLocation
+                : updatePathBox.Text.Trim();
+            updatePathBox.Text = loc;
             var settings = AppSettings.Load();
-            AppSettings.Save(settings with { UpdateLocation = updatePathBox.Text.Trim() });
+            AppSettings.Save(settings with { UpdateLocation = loc });
             savePathButton.Text = "\u2713";
             var resetTimer = new System.Windows.Forms.Timer { Interval = 1500 };
             resetTimer.Tick += (_, _) => { savePathButton.Text = "Save"; resetTimer.Stop(); resetTimer.Dispose(); };

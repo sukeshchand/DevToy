@@ -25,6 +25,8 @@ record AppSettingsData
     [JsonPropertyName("showQuotes")]
     public bool ShowQuotes { get; init; } = true;
 
+    public const string DefaultUpdateLocation = "https://api.github.com/repos/sukeshchand/ProdToy/releases/latest";
+
     [JsonPropertyName("updateLocation")]
     public string UpdateLocation { get; init; } = "";
 

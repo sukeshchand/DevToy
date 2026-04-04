@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net.Http;
 using System.Text;
 
 namespace ProdToy;
@@ -7,17 +8,18 @@ static class Updater
 {
     public record UpdateResult(bool Success, string Message);
 
+    private static readonly HttpClient _http = new()
+    {
+        Timeout = TimeSpan.FromMinutes(5),
+    };
+
     public static UpdateResult Apply()
     {
         try
         {
             var settings = AppSettings.Load();
-            if (string.IsNullOrWhiteSpace(settings.UpdateLocation))
-                return new UpdateResult(false, "No update location configured.");
-
-            string sourceExe = Path.Combine(settings.UpdateLocation, "ProdToy.exe");
-            if (!File.Exists(sourceExe))
-                return new UpdateResult(false, $"Update file not found at {sourceExe}");
+            string location = UpdateChecker.ResolveUpdateLocation(settings.UpdateLocation);
+            var metadata = UpdateChecker.LatestMetadata;
 
             string installDir = Path.GetDirectoryName(Application.ExecutablePath)!;
             string currentExe = Application.ExecutablePath;
@@ -26,8 +28,29 @@ static class Updater
             string scriptPath = Path.Combine(installDir, "_update.ps1");
             int currentPid = Environment.ProcessId;
 
-            // Step 1: Copy new exe from network to local staging file
-            File.Copy(sourceExe, updateExe, overwrite: true);
+            // Step 1: Get new exe to local staging file
+            bool isHttp = location.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                       || location.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+            if (isHttp)
+            {
+                // Download from URL (use DownloadUrl from metadata if available)
+                string downloadUrl = metadata?.DownloadUrl ?? "";
+                if (string.IsNullOrWhiteSpace(downloadUrl))
+                    return new UpdateResult(false, "No download URL found in the release.");
+
+                var bytes = _http.GetByteArrayAsync(downloadUrl).GetAwaiter().GetResult();
+                File.WriteAllBytes(updateExe, bytes);
+            }
+            else
+            {
+                // Copy from local/network path
+                string sourceExe = Path.Combine(location, "ProdToy.exe");
+                if (!File.Exists(sourceExe))
+                    return new UpdateResult(false, $"Update file not found at {sourceExe}");
+
+                File.Copy(sourceExe, updateExe, overwrite: true);
+            }
 
             // Step 2: Write the updater PowerShell script
             string ps1 = $@"

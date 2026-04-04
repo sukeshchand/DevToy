@@ -289,7 +289,9 @@ class SetupForm : Form
             var merged = current with
             {
                 UpdateLocation = string.IsNullOrWhiteSpace(current.UpdateLocation)
-                    ? defaults.UpdateLocation
+                    ? (string.IsNullOrWhiteSpace(defaults.UpdateLocation)
+                        ? AppSettingsData.DefaultUpdateLocation
+                        : defaults.UpdateLocation)
                     : current.UpdateLocation,
             };
 
