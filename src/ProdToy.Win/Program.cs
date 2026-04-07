@@ -16,13 +16,27 @@ static class Program
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
-        // No arguments → check if running from install directory
+        // Handle --uninstall (triggered by Windows "Apps & Features" or CLI)
+        if (args.Any(a => a.Equals("--uninstall", StringComparison.OrdinalIgnoreCase)))
+        {
+            RunUninstall();
+            return;
+        }
+
+        // No arguments → determine mode from registry + location
         if (args.Length == 0)
         {
-            if (IsRunningFromInstallDir())
-                RunInstalledInstance();
+            if (AppRegistry.IsRegistered())
+            {
+                if (IsRunningFromInstallDir())
+                    RunInstalledInstance();
+                else
+                    Application.Run(new SetupForm(repair: true));
+            }
             else
+            {
                 Application.Run(new SetupForm());
+            }
             return;
         }
 
@@ -92,6 +106,29 @@ static class Program
         Application.Run(new PopupAppContext(title, message, type, sessionId, cwd));
     }
 
+    private static void RunUninstall()
+    {
+        var confirm = MessageBox.Show(
+            "Remove ProdToy and clean up Claude Code hook entries?\n\n" +
+            "Your response history and settings will be kept.",
+            "Uninstall ProdToy",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2);
+
+        if (confirm != DialogResult.Yes) return;
+
+        var result = Uninstaller.Run(out string? cleanupBatPath);
+
+        MessageBox.Show(result.Message,
+            result.Success ? "Uninstall Complete" : "Uninstall Failed",
+            MessageBoxButtons.OK,
+            result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
+
+        if (result.Success && cleanupBatPath != null)
+            Uninstaller.LaunchCleanupScript(cleanupBatPath);
+    }
+
     private static void RunInstalledInstance()
     {
         using var mutex = new Mutex(true, MutexName, out bool isNew);
@@ -102,6 +139,22 @@ static class Program
             return;
         }
 
+        // Check if we just came back from an auto-update (show welcome)
+        string updateMarker = Path.Combine(AppPaths.Root, "_updated.marker");
+        bool justUpdated = File.Exists(updateMarker);
+        if (justUpdated)
+        {
+            try { File.Delete(updateMarker); } catch { }
+            using var welcome = new WelcomeForm(isUpdate: true);
+            welcome.ShowDialog();
+        }
+
+        // Check if launched from setup (welcome already shown, just start hidden)
+        string hiddenMarker = Path.Combine(AppPaths.Root, "_start_hidden.marker");
+        bool startHidden = justUpdated || File.Exists(hiddenMarker);
+        if (File.Exists(hiddenMarker))
+            try { File.Delete(hiddenMarker); } catch { }
+
         // Load last history entry or show a default welcome
         var latest = ResponseHistory.GetLatest();
         string title = latest?.Title ?? "ProdToy";
@@ -110,7 +163,7 @@ static class Program
         string sessionId = latest?.SessionId ?? "";
         string cwd = latest?.Cwd ?? "";
 
-        Application.Run(new PopupAppContext(title, message, type, sessionId, cwd));
+        Application.Run(new PopupAppContext(title, message, type, sessionId, cwd, startHidden: startHidden));
     }
 
     /// <summary>

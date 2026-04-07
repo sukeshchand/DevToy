@@ -19,7 +19,7 @@ class PopupAppContext : ApplicationContext
     private AlarmForm? _alarmForm;
     private ScreenshotEditorForm? _editorForm;
 
-    public PopupAppContext(string initialTitle, string initialMessage, string initialType, string sessionId = "", string cwd = "")
+    public PopupAppContext(string initialTitle, string initialMessage, string initialType, string sessionId = "", string cwd = "", bool startHidden = false)
     {
         var theme = Themes.LoadSaved();
         _appIcon = Themes.CreateAppIcon(theme.Primary);
@@ -27,8 +27,12 @@ class PopupAppContext : ApplicationContext
         // Ensure hook script matches this exe version (critical after updates)
         Updater.EnsureHookScript(Application.ExecutablePath);
 
+        // Keep Windows "Apps & Features" entry current after updates
+        AppRegistry.Register();
+
         _popupForm = new PopupForm(theme);
-        _popupForm.ShowPopup(initialTitle, initialMessage, initialType, sessionId, cwd);
+        if (!startHidden)
+            _popupForm.ShowPopup(initialTitle, initialMessage, initialType, sessionId, cwd);
 
         var trayMenu = BuildTrayMenu();
         _takeScreenshotItem = trayMenu.Items[2];

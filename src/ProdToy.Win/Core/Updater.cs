@@ -106,7 +106,11 @@ Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue
 
             File.WriteAllText(scriptPath, ps1, Encoding.UTF8);
 
-            // Step 3: Launch the PowerShell script and exit
+            // Step 3: Write update marker so the new instance shows the welcome screen
+            try { File.WriteAllText(Path.Combine(installDir, "_updated.marker"), ""); }
+            catch { }
+
+            // Step 4: Launch the PowerShell script and exit
             Process.Start(new ProcessStartInfo
             {
                 FileName = "powershell.exe",

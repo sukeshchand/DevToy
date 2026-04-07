@@ -49,7 +49,18 @@ static class Uninstaller
                 log.AppendLine("Settings file not found (no hooks to remove).");
             }
 
-            // Step 3: Build a cleanup batch script that waits for this process to exit,
+            // Step 3: Remove from Windows "Apps & Features"
+            try
+            {
+                AppRegistry.Unregister();
+                log.AppendLine("Removed from Windows Apps & Features.");
+            }
+            catch (Exception ex)
+            {
+                log.AppendLine($"Note: Could not remove Apps & Features entry: {ex.Message}");
+            }
+
+            // Step 4: Build a cleanup batch script that waits for this process to exit,
             // then deletes the exe(s) and their folders (if empty).
             var batLines = new StringBuilder();
             batLines.AppendLine("@echo off");
