@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using Microsoft.Win32;
 
 namespace ProdToy;
 
@@ -19,7 +21,6 @@ class SettingsForm : Form
     public event Action<bool>? HistoryEnabledChanged;
     public event Action<bool>? SnoozeChanged;
     public event Action<bool>? ShowQuotesChanged;
-    public event Action? UninstallRequested;
     public event Action<string>? ScreenshotHotkeyChanged;
     public event Action<string>? GlobalFontChanged;
     public event Action<bool>? ScreenshotEnabledChanged;
@@ -216,6 +217,44 @@ class SettingsForm : Form
             string name = fontCombo.SelectedItem?.ToString() ?? "Segoe UI";
             try { fontPreviewLabel.Font = new Font(name, 11f); } catch { }
         };
+
+        gy += 38;
+
+        // --- STARTUP section ---
+        var startupSectionLabel = CreateSectionLabel("STARTUP", tp, gy);
+        generalPage.Controls.Add(startupSectionLabel);
+        gy += 28;
+
+        var startWithWindowsCheck = new CheckBox
+        {
+            Text = "Start ProdToy when Windows starts",
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = currentTheme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = AppSettings.Load().StartWithWindows,
+            AutoSize = true,
+            Location = new Point(tp, gy),
+            Cursor = Cursors.Hand,
+        };
+        startWithWindowsCheck.CheckedChanged += (_, _) =>
+        {
+            bool enabled = startWithWindowsCheck.Checked;
+            AppSettings.Save(AppSettings.Load() with { StartWithWindows = enabled });
+            SetStartWithWindows(enabled);
+        };
+        generalPage.Controls.Add(startWithWindowsCheck);
+        gy += 28;
+
+        var startupNote = new Label
+        {
+            Text = "ProdToy will start minimized to the system tray.",
+            Font = new Font("Segoe UI", 8.5f),
+            ForeColor = currentTheme.TextSecondary,
+            AutoSize = true,
+            Location = new Point(tp + 18, gy),
+            BackColor = Color.Transparent,
+        };
+        generalPage.Controls.Add(startupNote);
 
         // =============================================
         // TAB 1: Screen Capture
@@ -940,39 +979,8 @@ class SettingsForm : Form
             Math.Min(255, currentTheme.ErrorColor.B + 10));
         uninstallButton.Click += (_, _) =>
         {
-            var confirm = MessageBox.Show(this,
-                "This will remove ProdToy from the tools folder and remove the hook entries from Claude Code settings.\n\n" +
-                "Your response history and app settings will be kept.\n\n" +
-                "Are you sure you want to uninstall?",
-                "Confirm Uninstall",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning,
-                MessageBoxDefaultButton.Button2);
-
-            if (confirm != DialogResult.Yes) return;
-
-            var result = Uninstaller.Run(out string? cleanupBatPath);
-            if (result.Success)
-            {
-                MessageBox.Show(this,
-                    result.Message + "\n\nThe application will now close.",
-                    "Uninstall Complete",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
-
-                if (cleanupBatPath != null)
-                    Uninstaller.LaunchCleanupScript(cleanupBatPath);
-
-                UninstallRequested?.Invoke();
-            }
-            else
-            {
-                MessageBox.Show(this,
-                    result.Message,
-                    "Uninstall Failed",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-            }
+            using var uninstallForm = new UninstallForm();
+            uninstallForm.ShowDialog(this);
         };
         advancedPage.Controls.Add(uninstallButton);
 
@@ -1484,6 +1492,27 @@ class SettingsForm : Form
     {
         if (string.IsNullOrEmpty(command)) return false;
         return command.Contains("Show-ProdToy") || command.Contains("Show-DevToy");
+    }
+
+    private static void SetStartWithWindows(bool enabled)
+    {
+        const string keyPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
+        const string valueName = "ProdToy";
+
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(keyPath, writable: true);
+            if (key == null) return;
+
+            if (enabled)
+                key.SetValue(valueName, $"\"{AppPaths.ExePath}\"");
+            else
+                key.DeleteValue(valueName, throwOnMissingValue: false);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"SetStartWithWindows failed: {ex.Message}");
+        }
     }
 }
 

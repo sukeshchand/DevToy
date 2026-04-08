@@ -60,6 +60,19 @@ static class Uninstaller
                 log.AppendLine($"Note: Could not remove Apps & Features entry: {ex.Message}");
             }
 
+            // Step 3b: Remove "Start with Windows" registry entry
+            try
+            {
+                using var runKey = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                    @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", writable: true);
+                runKey?.DeleteValue("ProdToy", throwOnMissingValue: false);
+                log.AppendLine("Removed startup registry entry.");
+            }
+            catch (Exception ex)
+            {
+                log.AppendLine($"Note: Could not remove startup entry: {ex.Message}");
+            }
+
             // Step 4: Build a cleanup batch script that waits for this process to exit,
             // then deletes the exe(s) and their folders (if empty).
             var batLines = new StringBuilder();

@@ -108,25 +108,7 @@ static class Program
 
     private static void RunUninstall()
     {
-        var confirm = MessageBox.Show(
-            "Remove ProdToy and clean up Claude Code hook entries?\n\n" +
-            "Your response history and settings will be kept.",
-            "Uninstall ProdToy",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning,
-            MessageBoxDefaultButton.Button2);
-
-        if (confirm != DialogResult.Yes) return;
-
-        var result = Uninstaller.Run(out string? cleanupBatPath);
-
-        MessageBox.Show(result.Message,
-            result.Success ? "Uninstall Complete" : "Uninstall Failed",
-            MessageBoxButtons.OK,
-            result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
-
-        if (result.Success && cleanupBatPath != null)
-            Uninstaller.LaunchCleanupScript(cleanupBatPath);
+        Application.Run(new UninstallForm());
     }
 
     private static void RunInstalledInstance()

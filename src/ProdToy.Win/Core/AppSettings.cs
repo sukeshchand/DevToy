@@ -77,6 +77,9 @@ record AppSettingsData
     [JsonPropertyName("tripleCtrlEnabled")]
     public bool TripleCtrlEnabled { get; init; } = true;
 
+    [JsonPropertyName("startWithWindows")]
+    public bool StartWithWindows { get; init; } = false;
+
     [JsonPropertyName("screenshotLastColor")]
     public string ScreenshotLastColor { get; init; } = "Red";
 

@@ -231,8 +231,6 @@ class PopupAppContext : ApplicationContext
                 ApplyFontToForm(_alarmForm, fontFamily);
         };
 
-        _settingsForm.UninstallRequested += () => ExitApp();
-
         _popupForm.SnoozeChanged += UpdateTrayText;
 
         _settingsForm.FormClosed += (_, _) =>
