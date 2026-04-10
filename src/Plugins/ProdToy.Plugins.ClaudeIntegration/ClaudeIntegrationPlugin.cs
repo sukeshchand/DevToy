@@ -3,7 +3,7 @@ using ProdToy.Sdk;
 
 namespace ProdToy.Plugins.ClaudeIntegration;
 
-[Plugin("ProdToy.Plugin.ClaudeIntegration", "Claude Integration", "1.0.244",
+[Plugin("ProdToy.Plugin.ClaudeIntegration", "Claude Integration", "1.0.250",
     Description = "Claude Code hooks, status line, and auto-title integration",
     Author = "ProdToy",
     MenuPriority = 300)]
@@ -48,6 +48,7 @@ public class ClaudeIntegrationPlugin : IPlugin
     {
         var theme = _context.Host.CurrentTheme;
         var settings = _context.LoadSettings<ClaudePluginSettings>();
+        var hostSettings = HostSettings.Load(_context.Host.AppRootPath);
 
         var panel = new Panel
         {
@@ -59,6 +60,150 @@ public class ClaudeIntegrationPlugin : IPlugin
         int pad = 16;
         int y = pad;
         int contentWidth = 700;
+
+        // --- NOTIFICATIONS section ---
+        var notifSectionLabel = new Label
+        {
+            Text = "NOTIFICATIONS",
+            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+            ForeColor = theme.Primary,
+            AutoSize = true,
+            Location = new Point(pad, y),
+            BackColor = Color.Transparent,
+        };
+        panel.Controls.Add(notifSectionLabel);
+        y += 26;
+
+        bool notifEnabled = hostSettings.NotificationsEnabled;
+        var notifSubControls = new List<Control>();
+
+        var notifEnabledCheck = new CheckBox
+        {
+            Text = "Enable notifications",
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = theme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = notifEnabled,
+            AutoSize = true,
+            Location = new Point(pad + 8, y),
+            Cursor = Cursors.Hand,
+        };
+        panel.Controls.Add(notifEnabledCheck);
+        y += 28;
+
+        var notifModeLabel = new Label
+        {
+            Text = "Notification type:",
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = theme.TextPrimary,
+            AutoSize = true,
+            Enabled = notifEnabled,
+            Location = new Point(pad + 8, y + 3),
+            BackColor = Color.Transparent,
+        };
+        panel.Controls.Add(notifModeLabel);
+        notifSubControls.Add(notifModeLabel);
+
+        var notifModes = new[] { "Popup", "Windows", "Popup + Windows" };
+        var notifModeCombo = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Font = new Font("Segoe UI", 9f),
+            BackColor = theme.BgHeader,
+            ForeColor = theme.TextPrimary,
+            FlatStyle = FlatStyle.Flat,
+            Size = new Size(140, 24),
+            Enabled = notifEnabled,
+            Location = new Point(pad + 130, y),
+        };
+        foreach (var mode in notifModes)
+            notifModeCombo.Items.Add(mode);
+        notifModeCombo.SelectedItem = notifModes.Contains(hostSettings.NotificationMode) ? hostSettings.NotificationMode : "Popup";
+        notifModeCombo.SelectedIndexChanged += (_, _) =>
+        {
+            var hs = HostSettings.Load(_context.Host.AppRootPath);
+            HostSettings.Save(_context.Host.AppRootPath, hs with { NotificationMode = notifModeCombo.SelectedItem?.ToString() ?? "Popup" });
+        };
+        panel.Controls.Add(notifModeCombo);
+        notifSubControls.Add(notifModeCombo);
+        y += 30;
+
+        var quotesCheck = new CheckBox
+        {
+            Text = "Show quotes in popup header",
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = theme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = hostSettings.ShowQuotes,
+            Enabled = notifEnabled,
+            AutoSize = true,
+            Location = new Point(pad + 8, y),
+            Cursor = Cursors.Hand,
+        };
+        quotesCheck.CheckedChanged += (_, _) =>
+        {
+            var hs = HostSettings.Load(_context.Host.AppRootPath);
+            HostSettings.Save(_context.Host.AppRootPath, hs with { ShowQuotes = quotesCheck.Checked });
+            _context.Host.NotifyShowQuotesChanged(quotesCheck.Checked);
+        };
+        panel.Controls.Add(quotesCheck);
+        notifSubControls.Add(quotesCheck);
+        y += 28;
+
+        bool isSnoozed = _context.Host.IsSnoozed;
+        var snoozeCheck = new CheckBox
+        {
+            Text = isSnoozed
+                ? $"Snoozed ({Math.Max(1, (int)(_context.Host.SnoozeUntil - DateTime.Now).TotalMinutes)} min left)"
+                : "Snooze notifications (30 min)",
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = theme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = isSnoozed,
+            Enabled = notifEnabled,
+            AutoSize = true,
+            Location = new Point(pad + 8, y),
+            Cursor = Cursors.Hand,
+        };
+        snoozeCheck.CheckedChanged += (_, _) =>
+        {
+            if (snoozeCheck.Checked)
+                _context.Host.Snooze();
+            else
+                _context.Host.Unsnooze();
+        };
+        panel.Controls.Add(snoozeCheck);
+        notifSubControls.Add(snoozeCheck);
+
+        notifEnabledCheck.CheckedChanged += (_, _) =>
+        {
+            var hs = HostSettings.Load(_context.Host.AppRootPath);
+            HostSettings.Save(_context.Host.AppRootPath, hs with { NotificationsEnabled = notifEnabledCheck.Checked });
+            foreach (var ctrl in notifSubControls)
+                ctrl.Enabled = notifEnabledCheck.Checked;
+        };
+        y += 28;
+
+        // --- CHATS section ---
+        var historyCheck = new CheckBox
+        {
+            Text = "Save chat history",
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = theme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = hostSettings.HistoryEnabled,
+            AutoSize = true,
+            Location = new Point(pad + 8, y),
+            Cursor = Cursors.Hand,
+        };
+        historyCheck.CheckedChanged += (_, _) =>
+        {
+            var hs = HostSettings.Load(_context.Host.AppRootPath);
+            HostSettings.Save(_context.Host.AppRootPath, hs with { HistoryEnabled = historyCheck.Checked });
+            _context.Host.NotifyHistoryEnabledChanged(historyCheck.Checked);
+        };
+        panel.Controls.Add(historyCheck);
+        y += 34;
 
         // --- HOOKS section ---
         var hooksLabel = new Label

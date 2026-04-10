@@ -16,6 +16,9 @@ static class PluginManager
 
     public static IReadOnlyList<PluginInfo> Plugins => _plugins;
 
+    /// <summary>Fires when plugins are installed, uninstalled, enabled, or disabled.</summary>
+    public static event Action? PluginsChanged;
+
     /// <summary>
     /// Discover all plugin DLLs in the plugins directory and load enabled ones.
     /// Called once at startup.
@@ -149,6 +152,7 @@ static class PluginManager
         }
 
         SaveEnabledState();
+        PluginsChanged?.Invoke();
         return info.Instance != null;
     }
 
@@ -178,13 +182,14 @@ static class PluginManager
         }
 
         SaveEnabledState();
+        PluginsChanged?.Invoke();
         return info.Instance != null;
     }
 
     /// <summary>
     /// Disable an enabled plugin at runtime (stop + dispose + unload).
     /// </summary>
-    public static bool DisablePlugin(string pluginId)
+    public static bool DisablePlugin(string pluginId, bool notify = true)
     {
         var info = _plugins.Find(p => p.Id.Equals(pluginId, StringComparison.OrdinalIgnoreCase));
         if (info == null || !info.Enabled) return false;
@@ -213,6 +218,7 @@ static class PluginManager
         }
 
         SaveEnabledState();
+        if (notify) PluginsChanged?.Invoke();
         return true;
     }
 
@@ -224,34 +230,26 @@ static class PluginManager
         var info = _plugins.Find(p => p.Id.Equals(pluginId, StringComparison.OrdinalIgnoreCase));
         if (info == null) return false;
 
+        // Disable without firing PluginsChanged (we'll fire once at the end)
         if (info.Enabled)
-            DisablePlugin(pluginId);
+            DisablePlugin(pluginId, notify: false);
 
         _plugins.Remove(info);
+        SaveEnabledState();
 
-        // Force GC to release assembly file locks from the unloaded context
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        GC.Collect();
-
-        // Retry delete — DLL may take a moment to unlock after GC
-        for (int attempt = 0; attempt < 3; attempt++)
+        // Delete plugin folder — files are not locked since we use LoadFromStream
+        try
         {
-            try
-            {
-                if (Directory.Exists(info.PluginDirectory))
-                    Directory.Delete(info.PluginDirectory, recursive: true);
-                break;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Delete attempt {attempt + 1} failed: {ex.Message}");
-                if (attempt < 2)
-                    Thread.Sleep(500);
-            }
+            if (Directory.Exists(info.PluginDirectory))
+                Directory.Delete(info.PluginDirectory, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to delete plugin dir: {ex.Message}");
         }
 
-        SaveEnabledState();
+        // Fire once after everything is fully torn down
+        PluginsChanged?.Invoke();
         return true;
     }
 
@@ -265,7 +263,7 @@ static class PluginManager
         {
             // Probe the DLL to read its PluginAttribute
             var tempContext = new PluginLoadContext(sourceDllPath);
-            var assembly = tempContext.LoadFromAssemblyPath(sourceDllPath);
+            var assembly = tempContext.LoadFromStream(new MemoryStream(File.ReadAllBytes(sourceDllPath)));
             var (pluginType, attr) = FindPluginType(assembly);
             tempContext.Unload();
 
@@ -382,7 +380,7 @@ static class PluginManager
 
             // Peek at metadata without fully loading
             var tempContext = new PluginLoadContext(dllPath);
-            var assembly = tempContext.LoadFromAssemblyPath(dllPath);
+            var assembly = tempContext.LoadFromStream(new MemoryStream(File.ReadAllBytes(dllPath)));
             var (_, attr) = FindPluginType(assembly);
             tempContext.Unload();
 
@@ -414,7 +412,7 @@ static class PluginManager
         try
         {
             var loadContext = new PluginLoadContext(info.DllPath);
-            var assembly = loadContext.LoadFromAssemblyPath(info.DllPath);
+            var assembly = loadContext.LoadFromStream(new MemoryStream(File.ReadAllBytes(info.DllPath)));
             var (pluginType, attr) = FindPluginType(assembly);
 
             if (pluginType == null || attr == null)

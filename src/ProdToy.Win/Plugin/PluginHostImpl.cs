@@ -8,12 +8,12 @@ namespace ProdToy;
 sealed class PluginHostImpl : IPluginHost
 {
     private readonly NotifyIcon _trayIcon;
-    private readonly Form _marshalForm;
+    private readonly PopupForm _popupForm;
 
-    public PluginHostImpl(NotifyIcon trayIcon, Form marshalForm)
+    public PluginHostImpl(NotifyIcon trayIcon, PopupForm popupForm)
     {
         _trayIcon = trayIcon;
-        _marshalForm = marshalForm;
+        _popupForm = popupForm;
     }
 
     public PluginTheme CurrentTheme => ToPluginTheme(Themes.LoadSaved());
@@ -44,8 +44,8 @@ sealed class PluginHostImpl : IPluginHost
 
     public void InvokeOnUI(Action action)
     {
-        if (_marshalForm.InvokeRequired)
-            _marshalForm.Invoke(action);
+        if (_popupForm.InvokeRequired)
+            _popupForm.Invoke(action);
         else
             action();
     }
@@ -59,6 +59,18 @@ sealed class PluginHostImpl : IPluginHost
     {
         GlobalFontChanged?.Invoke(fontFamily);
     }
+
+    public void NotifyShowQuotesChanged(bool show) => _popupForm.SetShowQuotes(show);
+
+    public void NotifyHistoryEnabledChanged(bool enabled) => _popupForm.UpdateHistoryNav();
+
+    public void Snooze() => _popupForm.Snooze();
+
+    public void Unsnooze() => _popupForm.Unsnooze();
+
+    public bool IsSnoozed => _popupForm.IsSnoozed;
+
+    public DateTime SnoozeUntil => _popupForm.SnoozeUntil;
 
     public IDisposable? RegisterTripleCtrl(Action callback)
     {

@@ -18,13 +18,17 @@ class SettingsForm : Form
     private readonly Label _titleLabel;
     private readonly Panel _accentLine;
 
+    // Fixed tab references for live rebuild
+    private TabPage _pluginsPage = null!;
+    private TabPage _aboutPage = null!;
+    private readonly int _tp = 16;
+    private int _tabInner;
+    private readonly int _contentWidth = 752;
+
     public event Action<PopupTheme>? ThemeChanged;
-    public event Action<bool>? HistoryEnabledChanged;
-    public event Action<bool>? SnoozeChanged;
-    public event Action<bool>? ShowQuotesChanged;
     public event Action<string>? GlobalFontChanged;
 
-    public SettingsForm(PopupTheme currentTheme, DateTime snoozeUntil)
+    public SettingsForm(PopupTheme currentTheme)
     {
         _currentTheme = currentTheme;
 
@@ -69,8 +73,8 @@ class SettingsForm : Form
         y += 8;
 
         // --- TabControl (owner-drawn) ---
-        int pluginSettingsCount = PluginManager.GetAllSettingsPages().Count;
-        int tabCount = 7 + pluginSettingsCount; // General, Capture, Appearance, Claude CLI, Advanced, Plugins, About + plugin tabs
+        // Initial tab width — will be recalculated by RebuildPluginTabs()
+        int tabCount = 4; // General, Appearance, Advanced, Plugins (About + plugin tabs added by RebuildPluginTabs)
         int tabWidth = (contentWidth - 4) / tabCount;
         _tabControl = new ThemedTabControl(currentTheme)
         {
@@ -83,8 +87,9 @@ class SettingsForm : Form
         };
         Controls.Add(_tabControl);
 
-        int tp = 16; // inner padding for controls inside tab pages
-        int tabInner = contentWidth - tp * 2 - 2;
+        int tp = _tp;
+        int tabInner = _contentWidth - tp * 2 - 2;
+        _tabInner = tabInner;
 
         // =============================================
         // TAB 0: General
@@ -317,195 +322,9 @@ class SettingsForm : Form
         };
         appearancePage.Controls.Add(_themePreview);
 
-        // =============================================
-        // TAB 2: Notifications
-        // =============================================
-        var claudePage = CreateTabPage("Notifications", currentTheme);
-        _tabControl.TabPages.Add(claudePage);
+        // (Notifications tab removed — moved to Claude Integration plugin settings)
 
-        int cy = tp;
-
-        // --- Conversations main heading ---
-        var conversationsLabel = CreateSectionLabel("CONVERSATIONS", tp, cy);
-        claudePage.Controls.Add(conversationsLabel);
-        cy += 28;
-
-        // --- Notifications sub-group ---
-        var notifLabel = CreateSubSectionLabel("Notifications", tp, cy, currentTheme);
-        claudePage.Controls.Add(notifLabel);
-        cy += 22;
-
-        bool notifEnabled = AppSettings.Load().NotificationsEnabled;
-        var notifEnabledCheck = new CheckBox
-        {
-            Text = "Enable notifications",
-            Font = new Font("Segoe UI", 9.5f),
-            ForeColor = currentTheme.TextPrimary,
-            BackColor = Color.Transparent,
-            Checked = notifEnabled,
-            AutoSize = true,
-            Location = new Point(tp + 8, cy),
-            Cursor = Cursors.Hand,
-        };
-        claudePage.Controls.Add(notifEnabledCheck);
-        cy += 28;
-
-        var notifSubControls = new List<Control>();
-
-        var notifModeLabel = new Label
-        {
-            Text = "Notification type:",
-            Font = new Font("Segoe UI", 9f),
-            ForeColor = currentTheme.TextPrimary,
-            AutoSize = true,
-            Enabled = notifEnabled,
-            Location = new Point(tp + 8, cy + 3),
-            BackColor = Color.Transparent,
-        };
-        claudePage.Controls.Add(notifModeLabel);
-        notifSubControls.Add(notifModeLabel);
-
-        var notifModes = new[] { "Popup", "Windows", "Popup + Windows" };
-        var currentMode = AppSettings.Load().NotificationMode;
-        var notifModeCombo = new ComboBox
-        {
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            Font = new Font("Segoe UI", 9f),
-            BackColor = currentTheme.BgHeader,
-            ForeColor = currentTheme.TextPrimary,
-            FlatStyle = FlatStyle.Flat,
-            Size = new Size(140, 24),
-            Enabled = notifEnabled,
-            Location = new Point(tp + 130, cy),
-        };
-        foreach (var mode in notifModes)
-            notifModeCombo.Items.Add(mode);
-        notifModeCombo.SelectedItem = notifModes.Contains(currentMode) ? currentMode : "Popup";
-        notifModeCombo.SelectedIndexChanged += (_, _) =>
-        {
-            var s = AppSettings.Load();
-            AppSettings.Save(s with { NotificationMode = notifModeCombo.SelectedItem?.ToString() ?? "Popup" });
-        };
-        claudePage.Controls.Add(notifModeCombo);
-        notifSubControls.Add(notifModeCombo);
-        cy += 30;
-
-        var quotesCheck = new CheckBox
-        {
-            Text = "Show quotes in popup header",
-            Font = new Font("Segoe UI", 9.5f),
-            ForeColor = currentTheme.TextPrimary,
-            BackColor = Color.Transparent,
-            Checked = AppSettings.Load().ShowQuotes,
-            Enabled = notifEnabled,
-            AutoSize = true,
-            Location = new Point(tp + 8, cy),
-            Cursor = Cursors.Hand,
-        };
-        quotesCheck.CheckedChanged += (_, _) =>
-        {
-            var settings = AppSettings.Load();
-            AppSettings.Save(settings with { ShowQuotes = quotesCheck.Checked });
-            ShowQuotesChanged?.Invoke(quotesCheck.Checked);
-        };
-        claudePage.Controls.Add(quotesCheck);
-        notifSubControls.Add(quotesCheck);
-        cy += 28;
-
-        bool isSnoozed = DateTime.Now < snoozeUntil;
-        var snoozeCheck = new CheckBox
-        {
-            Text = isSnoozed
-                ? $"Snoozed ({Math.Max(1, (int)(snoozeUntil - DateTime.Now).TotalMinutes)} min left)"
-                : "Snooze notifications (30 min)",
-            Font = new Font("Segoe UI", 9.5f),
-            ForeColor = currentTheme.TextPrimary,
-            BackColor = Color.Transparent,
-            Checked = isSnoozed,
-            Enabled = notifEnabled,
-            AutoSize = true,
-            Location = new Point(tp + 8, cy),
-            Cursor = Cursors.Hand,
-        };
-
-        var _snoozeUntil = snoozeUntil;
-        var snoozeTimer = new System.Windows.Forms.Timer { Interval = 15000 };
-        snoozeTimer.Tick += (_, _) =>
-        {
-            if (DateTime.Now >= _snoozeUntil && snoozeCheck.Checked)
-            {
-                snoozeCheck.Checked = false;
-                snoozeCheck.Text = "Snooze notifications (30 min)";
-                SnoozeChanged?.Invoke(false);
-                snoozeTimer.Stop();
-            }
-            else if (snoozeCheck.Checked && DateTime.Now < _snoozeUntil)
-            {
-                int mins = Math.Max(1, (int)(_snoozeUntil - DateTime.Now).TotalMinutes);
-                snoozeCheck.Text = $"Snoozed ({mins} min left)";
-            }
-        };
-        if (isSnoozed) snoozeTimer.Start();
-
-        snoozeCheck.CheckedChanged += (_, _) =>
-        {
-            if (snoozeCheck.Checked)
-            {
-                _snoozeUntil = DateTime.Now.AddMinutes(30);
-                snoozeCheck.Text = "Snoozed (30 min left)";
-                snoozeTimer.Start();
-            }
-            else
-            {
-                _snoozeUntil = DateTime.MinValue;
-                snoozeCheck.Text = "Snooze notifications (30 min)";
-                snoozeTimer.Stop();
-            }
-            SnoozeChanged?.Invoke(snoozeCheck.Checked);
-        };
-
-        FormClosed += (_, _) => { snoozeTimer.Stop(); snoozeTimer.Dispose(); };
-
-        claudePage.Controls.Add(snoozeCheck);
-        notifSubControls.Add(snoozeCheck);
-
-        notifEnabledCheck.CheckedChanged += (_, _) =>
-        {
-            var s = AppSettings.Load();
-            AppSettings.Save(s with { NotificationsEnabled = notifEnabledCheck.Checked });
-            foreach (var ctrl in notifSubControls)
-                ctrl.Enabled = notifEnabledCheck.Checked;
-        };
-        cy += 28;
-
-        // --- Chats sub-group ---
-        cy += 4;
-        var chatsLabel = CreateSubSectionLabel("Chats", tp, cy, currentTheme);
-        claudePage.Controls.Add(chatsLabel);
-        cy += 22;
-
-        var historyCheck = new CheckBox
-        {
-            Text = "Save chat history",
-            Font = new Font("Segoe UI", 9.5f),
-            ForeColor = currentTheme.TextPrimary,
-            BackColor = Color.Transparent,
-            Checked = ResponseHistory.IsEnabled,
-            AutoSize = true,
-            Location = new Point(tp + 8, cy),
-            Cursor = Cursors.Hand,
-        };
-        historyCheck.CheckedChanged += (_, _) =>
-        {
-            ResponseHistory.IsEnabled = historyCheck.Checked;
-            HistoryEnabledChanged?.Invoke(historyCheck.Checked);
-        };
-        claudePage.Controls.Add(historyCheck);
-        cy += 30;
-
-        // (Hooks and Status Line sections moved to Claude Integration plugin)
-
-        // TAB 4: Advanced
+        // TAB 2: Advanced
         // =============================================
         var advancedPage = CreateTabPage("Advanced", currentTheme);
         _tabControl.TabPages.Add(advancedPage);
@@ -551,14 +370,14 @@ class SettingsForm : Form
         advancedPage.Controls.Add(uninstallButton);
 
         // =============================================
-        // TAB 5: Plugins
+        // TAB: Plugins (fixed)
         // =============================================
-        var pluginsPage = CreateTabPage("Plugins", currentTheme);
-        _tabControl.TabPages.Add(pluginsPage);
+        _pluginsPage = CreateTabPage("Plugins", currentTheme);
+        _tabControl.TabPages.Add(_pluginsPage);
         int py = tp;
 
         var pluginsSectionLabel = CreateSectionLabel("INSTALLED PLUGINS", tp, py);
-        pluginsPage.Controls.Add(pluginsSectionLabel);
+        _pluginsPage.Controls.Add(pluginsSectionLabel);
 
         var browseCatalogButton = new RoundedButton
         {
@@ -576,60 +395,22 @@ class SettingsForm : Form
         PluginCatalogForm? openCatalog = null;
         browseCatalogButton.Click += (_, _) =>
         {
-            // Singleton: bring existing to front if already open
             if (openCatalog != null && !openCatalog.IsDisposed)
             {
                 openCatalog.BringToFront();
                 openCatalog.Activate();
                 return;
             }
-
             openCatalog = new PluginCatalogForm(currentTheme);
-            openCatalog.PluginsChanged += () => RebuildPluginList(pluginsPage, currentTheme, tp, tabInner);
-            openCatalog.FormClosed += (_, _) =>
-            {
-                RebuildPluginList(pluginsPage, currentTheme, tp, tabInner);
-                openCatalog = null;
-            };
+            openCatalog.FormClosed += (_, _) => openCatalog = null;
             openCatalog.Show(this);
         };
-        pluginsPage.Controls.Add(browseCatalogButton);
-
-        RebuildPluginList(pluginsPage, currentTheme, tp, tabInner);
-
-        // Dynamic plugin settings tabs (contributed by enabled plugins)
-        var pluginSettingsPages = PluginManager.GetAllSettingsPages();
-        foreach (var (pluginInfo, settingsPage) in pluginSettingsPages)
-        {
-            var pluginTabPage = CreateTabPage(settingsPage.TabTitle, currentTheme);
-            _tabControl.TabPages.Add(pluginTabPage);
-            try
-            {
-                var content = settingsPage.CreateContent();
-                content.Dock = DockStyle.Fill;
-                pluginTabPage.Controls.Add(content);
-            }
-            catch (Exception ex)
-            {
-                var errorLabel = new Label
-                {
-                    Text = $"Failed to load settings for {pluginInfo.Name}:\n{ex.Message}",
-                    Font = new Font("Segoe UI", 9f),
-                    ForeColor = currentTheme.ErrorColor,
-                    AutoSize = true,
-                    MaximumSize = new Size(tabInner, 0),
-                    Location = new Point(tp, tp),
-                    BackColor = Color.Transparent,
-                };
-                pluginTabPage.Controls.Add(errorLabel);
-            }
-        }
+        _pluginsPage.Controls.Add(browseCatalogButton);
 
         // =============================================
-        // TAB 6+: About
+        // TAB: About (fixed, always last)
         // =============================================
-        var aboutPage = CreateTabPage("About", currentTheme);
-        _tabControl.TabPages.Add(aboutPage);
+        _aboutPage = CreateTabPage("About", currentTheme);
         int ab = tp;
 
         // --- App icon + name + version ---
@@ -649,7 +430,7 @@ class SettingsForm : Form
             using var iconFont = new Font("Segoe UI Semibold", 18f, FontStyle.Bold);
             e.Graphics.DrawString("P", iconFont, textBrush, new RectangleF(0, 0, 48, 48), sf);
         };
-        aboutPage.Controls.Add(appIconPanel);
+        _aboutPage.Controls.Add(appIconPanel);
 
         var aboutNameLabel = new Label
         {
@@ -660,7 +441,7 @@ class SettingsForm : Form
             Location = new Point(tp + 58, ab),
             BackColor = Color.Transparent,
         };
-        aboutPage.Controls.Add(aboutNameLabel);
+        _aboutPage.Controls.Add(aboutNameLabel);
 
         var aboutVersionLabel = new Label
         {
@@ -671,7 +452,7 @@ class SettingsForm : Form
             Location = new Point(tp + 60, ab + 28),
             BackColor = Color.Transparent,
         };
-        aboutPage.Controls.Add(aboutVersionLabel);
+        _aboutPage.Controls.Add(aboutVersionLabel);
         ab += 58;
 
         var aboutDescLabel = new Label
@@ -684,16 +465,16 @@ class SettingsForm : Form
             Location = new Point(tp, ab),
             BackColor = Color.Transparent,
         };
-        aboutPage.Controls.Add(aboutDescLabel);
+        _aboutPage.Controls.Add(aboutDescLabel);
         ab += aboutDescLabel.PreferredHeight + 14;
 
         // --- Separator ---
-        aboutPage.Controls.Add(CreateSeparator(tp, ab, tabInner));
+        _aboutPage.Controls.Add(CreateSeparator(tp, ab, tabInner));
         ab += 14;
 
         // --- Repository Section ---
         var repoSectionLabel = CreateSectionLabel("REPOSITORY", tp, ab);
-        aboutPage.Controls.Add(repoSectionLabel);
+        _aboutPage.Controls.Add(repoSectionLabel);
         ab += 26;
 
         // GitHub icon (drawn) + repo link
@@ -722,7 +503,7 @@ class SettingsForm : Form
         {
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/sukeshchand/ProdToy") { UseShellExecute = true }); } catch { }
         };
-        aboutPage.Controls.Add(githubIconPanel);
+        _aboutPage.Controls.Add(githubIconPanel);
 
         var repoLink = new Label
         {
@@ -740,7 +521,7 @@ class SettingsForm : Form
         };
         repoLink.MouseEnter += (_, _) => repoLink.ForeColor = currentTheme.PrimaryLight;
         repoLink.MouseLeave += (_, _) => repoLink.ForeColor = currentTheme.Primary;
-        aboutPage.Controls.Add(repoLink);
+        _aboutPage.Controls.Add(repoLink);
         ab += 30;
 
         // Info rows: Author, License, Runtime
@@ -762,7 +543,7 @@ class SettingsForm : Form
                 Location = new Point(tp, ab),
                 BackColor = Color.Transparent,
             };
-            aboutPage.Controls.Add(rowLabel);
+            _aboutPage.Controls.Add(rowLabel);
 
             var rowValue = new Label
             {
@@ -773,18 +554,18 @@ class SettingsForm : Form
                 Location = new Point(tp + 84, ab),
                 BackColor = Color.Transparent,
             };
-            aboutPage.Controls.Add(rowValue);
+            _aboutPage.Controls.Add(rowValue);
             ab += 22;
         }
         ab += 10;
 
         // --- Separator ---
-        aboutPage.Controls.Add(CreateSeparator(tp, ab, tabInner));
+        _aboutPage.Controls.Add(CreateSeparator(tp, ab, tabInner));
         ab += 14;
 
         // --- Updates Section ---
         var updateSectionLabel = CreateSectionLabel("UPDATES", tp, ab);
-        aboutPage.Controls.Add(updateSectionLabel);
+        _aboutPage.Controls.Add(updateSectionLabel);
         ab += 26;
 
         var updatePathLabel = new Label
@@ -796,7 +577,7 @@ class SettingsForm : Form
             Location = new Point(tp, ab),
             BackColor = Color.Transparent,
         };
-        aboutPage.Controls.Add(updatePathLabel);
+        _aboutPage.Controls.Add(updatePathLabel);
         ab += 22;
 
         var updatePathBox = new TextBox
@@ -818,7 +599,7 @@ class SettingsForm : Form
             var settings = AppSettings.Load();
             AppSettings.Save(settings with { UpdateLocation = loc });
         };
-        aboutPage.Controls.Add(updatePathBox);
+        _aboutPage.Controls.Add(updatePathBox);
 
         var savePathButton = new RoundedButton
         {
@@ -846,7 +627,7 @@ class SettingsForm : Form
             resetTimer.Tick += (_, _) => { savePathButton.Text = "Save"; resetTimer.Stop(); resetTimer.Dispose(); };
             resetTimer.Start();
         };
-        aboutPage.Controls.Add(savePathButton);
+        _aboutPage.Controls.Add(savePathButton);
         ab += 34;
 
         var checkNowButton = new RoundedButton
@@ -931,9 +712,9 @@ class SettingsForm : Form
             checkNowButton.Enabled = true;
             checkNowButton.Text = "Check for Updates";
         };
-        aboutPage.Controls.Add(checkNowButton);
-        aboutPage.Controls.Add(checkResultLabel);
-        aboutPage.Controls.Add(updateLinkLabel);
+        _aboutPage.Controls.Add(checkNowButton);
+        _aboutPage.Controls.Add(checkResultLabel);
+        _aboutPage.Controls.Add(updateLinkLabel);
 
         // --- Bottom version label on form ---
         _versionLabel = new Label
@@ -950,10 +731,84 @@ class SettingsForm : Form
         // Set initial selection
         _themeCombo.SelectedIndex = selectedIndex;
 
+        // Build plugin tabs (plugins list + dynamic settings tabs + about at end)
+        RebuildPluginTabs();
+
+        // Live rebuild when plugins change
+        PluginManager.PluginsChanged += OnPluginsChanged;
+        FormClosed += (_, _) => PluginManager.PluginsChanged -= OnPluginsChanged;
+
         // Apply saved global font on open
         var savedGlobalFont = AppSettings.Load().GlobalFont;
         if (!string.IsNullOrEmpty(savedGlobalFont) && savedGlobalFont != "Segoe UI")
             ApplyGlobalFont(savedGlobalFont);
+    }
+
+    private void OnPluginsChanged()
+    {
+        if (InvokeRequired)
+        {
+            Invoke(OnPluginsChanged);
+            return;
+        }
+        RebuildPluginTabs();
+    }
+
+    /// <summary>
+    /// Rebuilds the plugin list on the Plugins tab, removes/adds dynamic plugin settings tabs,
+    /// and ensures About is always the last tab. Can be called at any time.
+    /// </summary>
+    private void RebuildPluginTabs()
+    {
+        // 1. Rebuild the installed plugins list on the Plugins tab
+        RebuildPluginList(_pluginsPage, _currentTheme, _tp, _tabInner);
+
+        // 2. Remove old dynamic plugin tabs (tagged with "plugin-tab")
+        for (int i = _tabControl.TabPages.Count - 1; i >= 0; i--)
+        {
+            if (_tabControl.TabPages[i].Tag is string tag && tag == "plugin-tab")
+                _tabControl.TabPages.RemoveAt(i);
+        }
+
+        // 3. Remove About tab (we'll re-add it at the end)
+        _tabControl.TabPages.Remove(_aboutPage);
+
+        // 4. Add dynamic plugin settings tabs
+        var pluginSettingsPages = PluginManager.GetAllSettingsPages();
+        foreach (var (pluginInfo, settingsPage) in pluginSettingsPages)
+        {
+            var pluginTabPage = CreateTabPage(settingsPage.TabTitle, _currentTheme);
+            pluginTabPage.Tag = "plugin-tab";
+            try
+            {
+                var content = settingsPage.CreateContent();
+                content.Dock = DockStyle.Fill;
+                pluginTabPage.Controls.Add(content);
+            }
+            catch (Exception ex)
+            {
+                var errorLabel = new Label
+                {
+                    Text = $"Failed to load settings for {pluginInfo.Name}:\n{ex.Message}",
+                    Font = new Font("Segoe UI", 9f),
+                    ForeColor = _currentTheme.ErrorColor,
+                    AutoSize = true,
+                    MaximumSize = new Size(_tabInner, 0),
+                    Location = new Point(_tp, _tp),
+                    BackColor = Color.Transparent,
+                };
+                pluginTabPage.Controls.Add(errorLabel);
+            }
+            _tabControl.TabPages.Add(pluginTabPage);
+        }
+
+        // 5. Add About tab back at the end
+        _tabControl.TabPages.Add(_aboutPage);
+
+        // 6. Recalculate tab widths
+        int tabCount = _tabControl.TabPages.Count;
+        int tabWidth = (_contentWidth - 4) / Math.Max(1, tabCount);
+        _tabControl.ItemSize = new Size(tabWidth, 32);
     }
 
     private static void RebuildPluginList(TabPage pluginsPage, PopupTheme theme, int tp, int tabInner)

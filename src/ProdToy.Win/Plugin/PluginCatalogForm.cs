@@ -269,7 +269,6 @@ class PluginCatalogForm : Form
             case "Update":
             {
                 _statusLabel.Text = $"Updating {entry.Name}...";
-                // Uninstall old, install new
                 PluginManager.UninstallPlugin(entry.Id);
                 var (success, message) = PluginCatalog.InstallPlugin(entry);
                 _statusLabel.Text = success ? $"Updated {entry.Name} to v{entry.Version}" : message;
@@ -296,8 +295,6 @@ class PluginCatalogForm : Form
                 break;
             }
         }
-
-        PluginsChanged?.Invoke();
         await LoadCatalog();
     }
 

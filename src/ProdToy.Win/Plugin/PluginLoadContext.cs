@@ -26,7 +26,7 @@ sealed class PluginLoadContext : AssemblyLoadContext
 
         string? assemblyPath = _resolver.ResolveAssemblyToPath(assemblyName);
         if (assemblyPath != null)
-            return LoadFromAssemblyPath(assemblyPath);
+            return LoadFromStream(new MemoryStream(File.ReadAllBytes(assemblyPath)));
 
         return null;
     }

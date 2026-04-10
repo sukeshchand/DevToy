@@ -37,4 +37,22 @@ public interface IPluginHost
 
     /// <summary>Register a triple-Ctrl-tap callback. Returns a disposable handle.</summary>
     IDisposable? RegisterTripleCtrl(Action callback);
+
+    /// <summary>Notify the host that show-quotes setting changed.</summary>
+    void NotifyShowQuotesChanged(bool show);
+
+    /// <summary>Notify the host that history-enabled setting changed.</summary>
+    void NotifyHistoryEnabledChanged(bool enabled);
+
+    /// <summary>Snooze notifications for 30 minutes.</summary>
+    void Snooze();
+
+    /// <summary>Cancel active snooze.</summary>
+    void Unsnooze();
+
+    /// <summary>Whether notifications are currently snoozed.</summary>
+    bool IsSnoozed { get; }
+
+    /// <summary>When the current snooze expires.</summary>
+    DateTime SnoozeUntil { get; }
 }

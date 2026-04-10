@@ -98,9 +98,11 @@ static class PluginCatalog
                 File.Copy(file, Path.Combine(destDir, Path.GetFileName(file)), overwrite: true);
 
             // Discover, load, initialize, and start the plugin
-            PluginManager.DiscoverAndLoad(entry.Id);
+            bool loaded = PluginManager.DiscoverAndLoad(entry.Id);
 
-            return (true, $"Installed {entry.Name} v{entry.Version}");
+            return loaded
+                ? (true, $"Installed {entry.Name} v{entry.Version}")
+                : (false, $"Files copied but plugin failed to load. Restart app to activate.");
         }
         catch (Exception ex)
         {

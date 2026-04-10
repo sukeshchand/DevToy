@@ -44,6 +44,12 @@ class PopupAppContext : ApplicationContext
         _pluginHost = new PluginHostImpl(_trayIcon, _popupForm);
         PluginManager.Initialize(_pluginHost);
 
+        // Rebuild tray menu when plugins change
+        PluginManager.PluginsChanged += () =>
+        {
+            _popupForm.Invoke(() => _trayIcon.ContextMenuStrip = BuildTrayMenu());
+        };
+
         Task.Run(() => PipeServerLoop(_cts.Token));
 
         // Exit when popup requests it (e.g. after update)
@@ -98,7 +104,7 @@ class PopupAppContext : ApplicationContext
             return;
         }
 
-        _settingsForm = new SettingsForm(_popupForm.CurrentTheme, _popupForm.SnoozeUntil);
+        _settingsForm = new SettingsForm(_popupForm.CurrentTheme);
 
         _settingsForm.ThemeChanged += theme =>
         {
@@ -109,26 +115,6 @@ class PopupAppContext : ApplicationContext
 
             // Apply to popup
             _popupForm.ApplyTheme(theme);
-        };
-
-        _settingsForm.HistoryEnabledChanged += _ =>
-        {
-            _popupForm.UpdateHistoryNav();
-        };
-
-        _settingsForm.ShowQuotesChanged += show =>
-        {
-            _popupForm.SetShowQuotes(show);
-        };
-
-        _settingsForm.SnoozeChanged += snoozed =>
-        {
-            if (snoozed)
-                _popupForm.Snooze();
-            else
-                _popupForm.Unsnooze();
-
-            UpdateTrayText();
         };
 
         _settingsForm.GlobalFontChanged += fontFamily =>
