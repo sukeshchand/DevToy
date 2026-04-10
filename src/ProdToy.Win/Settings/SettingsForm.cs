@@ -473,23 +473,27 @@ class SettingsForm : Form
         // Info rows: Author, License, Runtime
         var infoItems = new (string label, string value)[]
         {
-            ("Author", "Sukesh Chand"),
+            ("Author", "SUKESH CHANDH RAJU"),
+            ("", "sukesh.chand@gmail.com"),
             ("License", "MIT"),
             ("Runtime", System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription),
             ("Platform", $"Windows {Environment.OSVersion.Version.Major}.{Environment.OSVersion.Version.Minor}"),
         };
         foreach (var (label, value) in infoItems)
         {
-            var rowLabel = new Label
+            if (!string.IsNullOrEmpty(label))
             {
-                Text = label,
-                Font = new Font("Segoe UI", 8.5f),
-                ForeColor = currentTheme.TextSecondary,
-                Size = new Size(80, 20),
-                Location = new Point(tp, ab),
-                BackColor = Color.Transparent,
-            };
-            _aboutPage.Controls.Add(rowLabel);
+                var rowLabel = new Label
+                {
+                    Text = label,
+                    Font = new Font("Segoe UI", 8.5f),
+                    ForeColor = currentTheme.TextSecondary,
+                    Size = new Size(80, 20),
+                    Location = new Point(tp, ab),
+                    BackColor = Color.Transparent,
+                };
+                _aboutPage.Controls.Add(rowLabel);
+            }
 
             var rowValue = new Label
             {
@@ -497,7 +501,7 @@ class SettingsForm : Form
                 Font = new Font("Segoe UI", 8.5f),
                 ForeColor = currentTheme.TextPrimary,
                 AutoSize = true,
-                Location = new Point(tp + 84, ab),
+                Location = new Point(string.IsNullOrEmpty(label) ? tp : tp + 84, ab),
                 BackColor = Color.Transparent,
             };
             _aboutPage.Controls.Add(rowValue);

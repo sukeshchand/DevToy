@@ -138,17 +138,132 @@ public class ScreenshotPlugin : IPlugin
         panel.Controls.Add(hotkeyLabel);
         y += 26;
 
-        var hotkeyHint = new Label
+        var hotkeyBox = new TextBox
         {
-            Text = $"Current hotkey: {(string.IsNullOrEmpty(settings.ScreenshotHotkey) ? "(none)" : settings.ScreenshotHotkey)}",
-            Font = new Font("Segoe UI", 9f),
-            ForeColor = theme.TextPrimary,
-            AutoSize = true,
+            Text = string.IsNullOrEmpty(settings.ScreenshotHotkey) ? "(none)" : settings.ScreenshotHotkey,
+            Font = new Font("Segoe UI Semibold", 11f, FontStyle.Bold),
+            ForeColor = theme.Primary,
+            BackColor = theme.BgHeader,
+            BorderStyle = BorderStyle.FixedSingle,
+            Size = new Size(220, 30),
             Location = new Point(pad + 8, y),
+            ReadOnly = true,
+            TextAlign = HorizontalAlignment.Center,
+            Cursor = Cursors.Hand,
+        };
+
+        bool recording = false;
+
+        var changeBtn = new Button
+        {
+            Text = "Change",
+            Font = new Font("Segoe UI", 8.5f),
+            Size = new Size(70, 30),
+            Location = new Point(pad + 236, y),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = theme.PrimaryDim,
+            ForeColor = theme.TextSecondary,
+            Cursor = Cursors.Hand,
+        };
+        changeBtn.FlatAppearance.BorderSize = 0;
+
+        var clearBtn = new Button
+        {
+            Text = "Clear",
+            Font = new Font("Segoe UI", 8.5f),
+            Size = new Size(55, 30),
+            Location = new Point(pad + 312, y),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = theme.PrimaryDim,
+            ForeColor = theme.TextSecondary,
+            Cursor = Cursors.Hand,
+        };
+        clearBtn.FlatAppearance.BorderSize = 0;
+
+        var hotkeyStatus = new Label
+        {
+            Text = "",
+            Font = new Font("Segoe UI", 8f),
+            ForeColor = theme.TextSecondary,
+            AutoSize = true,
+            Location = new Point(pad + 8, y + 36),
             BackColor = Color.Transparent,
         };
-        panel.Controls.Add(hotkeyHint);
-        y += 24;
+
+        changeBtn.Click += (_, _) =>
+        {
+            if (!recording)
+            {
+                recording = true;
+                hotkeyBox.Text = "Press a key combination...";
+                hotkeyBox.ForeColor = theme.TextSecondary;
+                changeBtn.Text = "Cancel";
+                hotkeyStatus.Text = "Press modifier(s) + key, e.g. Ctrl+Shift+S";
+            }
+            else
+            {
+                recording = false;
+                var s = _context.LoadSettings<ScreenshotPluginSettings>();
+                hotkeyBox.Text = string.IsNullOrEmpty(s.ScreenshotHotkey) ? "(none)" : s.ScreenshotHotkey;
+                hotkeyBox.ForeColor = theme.Primary;
+                changeBtn.Text = "Change";
+                hotkeyStatus.Text = "";
+            }
+        };
+
+        hotkeyBox.KeyDown += (_, e) =>
+        {
+            if (!recording) return;
+            e.SuppressKeyPress = true;
+
+            if (e.KeyCode is Keys.ControlKey or Keys.ShiftKey or Keys.Menu or Keys.LMenu
+                or Keys.RMenu or Keys.LControlKey or Keys.RControlKey or Keys.LShiftKey
+                or Keys.RShiftKey or Keys.LWin or Keys.RWin)
+                return;
+
+            if (!e.Control && !e.Shift && !e.Alt)
+            {
+                hotkeyStatus.ForeColor = theme.ErrorColor;
+                hotkeyStatus.Text = "At least one modifier (Ctrl, Shift, Alt) is required";
+                return;
+            }
+
+            var parts = new List<string>();
+            if (e.Control) parts.Add("Ctrl");
+            if (e.Alt) parts.Add("Alt");
+            if (e.Shift) parts.Add("Shift");
+            parts.Add(e.KeyCode.ToString());
+
+            string hotkey = string.Join("+", parts);
+            hotkeyBox.Text = hotkey;
+            hotkeyBox.ForeColor = theme.Primary;
+            recording = false;
+            changeBtn.Text = "Change";
+
+            var s = _context.LoadSettings<ScreenshotPluginSettings>();
+            _context.SaveSettings(s with { ScreenshotHotkey = hotkey });
+            hotkeyStatus.ForeColor = theme.SuccessColor;
+            hotkeyStatus.Text = "Saved — restart app to apply";
+        };
+
+        clearBtn.Click += (_, _) =>
+        {
+            recording = false;
+            hotkeyBox.Text = "(none)";
+            hotkeyBox.ForeColor = theme.TextSecondary;
+            changeBtn.Text = "Change";
+
+            var s = _context.LoadSettings<ScreenshotPluginSettings>();
+            _context.SaveSettings(s with { ScreenshotHotkey = "" });
+            hotkeyStatus.ForeColor = theme.TextSecondary;
+            hotkeyStatus.Text = "Hotkey cleared";
+        };
+
+        panel.Controls.Add(hotkeyBox);
+        panel.Controls.Add(changeBtn);
+        panel.Controls.Add(clearBtn);
+        panel.Controls.Add(hotkeyStatus);
+        y += 58;
 
         var hotkeyNote = new Label
         {
