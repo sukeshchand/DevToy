@@ -47,7 +47,10 @@ class PopupAppContext : ApplicationContext
         // Rebuild tray menu when plugins change
         PluginManager.PluginsChanged += () =>
         {
-            _popupForm.Invoke(() => _trayIcon.ContextMenuStrip = BuildTrayMenu());
+            if (_popupForm.IsHandleCreated)
+                _popupForm.Invoke(() => _trayIcon.ContextMenuStrip = BuildTrayMenu());
+            else
+                _trayIcon.ContextMenuStrip = BuildTrayMenu();
         };
 
         Task.Run(() => PipeServerLoop(_cts.Token));

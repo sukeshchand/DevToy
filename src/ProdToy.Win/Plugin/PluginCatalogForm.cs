@@ -156,7 +156,17 @@ class PluginCatalogForm : Form
             string action;
             Color actionColor;
 
-            if (local == null)
+            // Check if plugin was just uninstalled but tab is still pending removal
+            bool pendingRemoval = Owner is SettingsForm sf && sf.IsPluginPendingRemoval(entry.Id);
+
+            if (pendingRemoval)
+            {
+                status = "Pending removal";
+                statusColor = _theme.TextSecondary;
+                action = "Close Settings to complete";
+                actionColor = _theme.TextSecondary;
+            }
+            else if (local == null)
             {
                 status = "Not installed";
                 statusColor = _theme.TextSecondary;
@@ -207,11 +217,13 @@ class PluginCatalogForm : Form
     {
         if (e.ColumnIndex == ColAction)
         {
-            // Draw action as underlined link text
+            // Draw action column — underlined link for actions, plain text for status labels
             e.DrawBackground();
             string text = e.SubItem?.Text ?? "";
             Color color = e.SubItem?.ForeColor ?? _theme.TextPrimary;
-            using var font = new Font(e.SubItem?.Font ?? _listView.Font, FontStyle.Underline);
+            bool isAction = text is "Install" or "Update" or "Uninstall";
+            var fontStyle = isAction ? FontStyle.Underline : FontStyle.Italic;
+            using var font = new Font(e.SubItem?.Font ?? _listView.Font, fontStyle);
             var bounds = e.Bounds;
             bounds.X += 4;
             TextRenderer.DrawText(e.Graphics!, text, font, bounds, color,
@@ -229,7 +241,9 @@ class PluginCatalogForm : Form
         if (hit.SubItem != null && hit.Item != null)
         {
             int colIndex = hit.Item.SubItems.IndexOf(hit.SubItem);
-            _listView.Cursor = colIndex == ColAction ? Cursors.Hand : Cursors.Default;
+            string actionText = hit.SubItem.Text;
+            bool isClickable = colIndex == ColAction && actionText is "Install" or "Update" or "Uninstall";
+            _listView.Cursor = isClickable ? Cursors.Hand : Cursors.Default;
         }
         else
         {
@@ -248,7 +262,9 @@ class PluginCatalogForm : Form
         var entry = (CatalogEntry)hit.Item.Tag;
         string action = hit.SubItem.Text;
 
-        await PerformAction(entry, action);
+        // Only handle actual actions, not status labels
+        if (action is "Install" or "Update" or "Uninstall")
+            await PerformAction(entry, action);
     }
 
     private async Task PerformAction(CatalogEntry entry, string action)
@@ -295,6 +311,11 @@ class PluginCatalogForm : Form
                 break;
             }
         }
+
+        // Directly notify the parent SettingsForm to refresh
+        if (Owner is SettingsForm settingsForm)
+            settingsForm.OnPluginsChanged();
+
         await LoadCatalog();
     }
 

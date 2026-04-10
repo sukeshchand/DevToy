@@ -37,7 +37,7 @@ class SettingsForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(800, 700);
+        Size = new Size(800, 820);
         ShowInTaskbar = true;
         AutoScaleMode = AutoScaleMode.Dpi;
         BackColor = currentTheme.BgDark;
@@ -73,13 +73,13 @@ class SettingsForm : Form
         y += 8;
 
         // --- TabControl (owner-drawn) ---
-        // Initial tab width — will be recalculated by RebuildPluginTabs()
-        int tabCount = 4; // General, Appearance, Advanced, Plugins (About + plugin tabs added by RebuildPluginTabs)
+        // Initial tab width — will be recalculated when plugin tabs are added
+        int tabCount = 2; // General, Plugins (About + plugin tabs added later)
         int tabWidth = (contentWidth - 4) / tabCount;
         _tabControl = new ThemedTabControl(currentTheme)
         {
             Location = new Point(leftMargin, y),
-            Size = new Size(contentWidth, 580),
+            Size = new Size(contentWidth, 700),
             Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold),
             SizeMode = TabSizeMode.Fixed,
             ItemSize = new Size(tabWidth, 32),
@@ -259,23 +259,15 @@ class SettingsForm : Form
             BackColor = Color.Transparent,
         };
         generalPage.Controls.Add(startupNote);
+        gy += 28;
 
-        // =============================================
-        // TAB 1: Appearance (was TAB 2, Screen Capture removed — now a plugin)
-        // =============================================
-        // (Screen Capture tab removed — now a plugin)
+        // --- THEME section (merged from Appearance tab) ---
+        generalPage.Controls.Add(CreateSeparator(tp, gy, tabInner));
+        gy += 14;
 
-        // =============================================
-        // TAB 1: Appearance
-        // =============================================
-        var appearancePage = CreateTabPage("Appearance", currentTheme);
-        _tabControl.TabPages.Add(appearancePage);
-
-        int ay = tp;
-
-        var themeSectionLabel = CreateSectionLabel("THEME", tp, ay);
-        appearancePage.Controls.Add(themeSectionLabel);
-        ay += 28;
+        var themeSectionLabel = CreateSectionLabel("THEME", tp, gy);
+        generalPage.Controls.Add(themeSectionLabel);
+        gy += 28;
 
         _themeCombo = new ComboBox
         {
@@ -285,7 +277,7 @@ class SettingsForm : Form
             ForeColor = currentTheme.TextPrimary,
             FlatStyle = FlatStyle.Flat,
             Size = new Size(tabInner, 28),
-            Location = new Point(tp, ay),
+            Location = new Point(tp, gy),
             DrawMode = DrawMode.OwnerDrawFixed,
             ItemHeight = 30,
         };
@@ -300,8 +292,8 @@ class SettingsForm : Form
 
         _themeCombo.DrawItem += OnThemeComboDrawItem;
         _themeCombo.SelectedIndexChanged += OnThemeComboChanged;
-        appearancePage.Controls.Add(_themeCombo);
-        ay += 40;
+        generalPage.Controls.Add(_themeCombo);
+        gy += 40;
 
         _themeNameLabel = new Label
         {
@@ -309,65 +301,18 @@ class SettingsForm : Form
             Font = new Font("Segoe UI", 10f),
             ForeColor = currentTheme.Primary,
             AutoSize = true,
-            Location = new Point(tp, ay),
+            Location = new Point(tp, gy),
             BackColor = Color.Transparent,
         };
-        appearancePage.Controls.Add(_themeNameLabel);
+        generalPage.Controls.Add(_themeNameLabel);
 
         _themePreview = new Panel
         {
             BackColor = currentTheme.Primary,
-            Location = new Point(tp, ay + 24),
+            Location = new Point(tp, gy + 24),
             Size = new Size(tabInner, 4),
         };
-        appearancePage.Controls.Add(_themePreview);
-
-        // (Notifications tab removed — moved to Claude Integration plugin settings)
-
-        // TAB 2: Advanced
-        // =============================================
-        var advancedPage = CreateTabPage("Advanced", currentTheme);
-        _tabControl.TabPages.Add(advancedPage);
-        int uy = tp;
-
-        var uninstallSectionLabel = CreateSectionLabel("UNINSTALL", tp, uy);
-        advancedPage.Controls.Add(uninstallSectionLabel);
-        uy += 28;
-
-        var uninstallDesc = new Label
-        {
-            Text = "Remove ProdToy from the tools folder and clean up hook\nentries from Claude Code settings. Your response history\nand app settings will be preserved.",
-            Font = new Font("Segoe UI", 9f),
-            ForeColor = currentTheme.TextSecondary,
-            AutoSize = true,
-            Location = new Point(tp, uy),
-            BackColor = Color.Transparent,
-        };
-        advancedPage.Controls.Add(uninstallDesc);
-        uy += 60;
-
-        var uninstallButton = new RoundedButton
-        {
-            Text = "Uninstall ProdToy",
-            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
-            Size = new Size(200, 34),
-            Location = new Point(tp, uy),
-            FlatStyle = FlatStyle.Flat,
-            BackColor = currentTheme.ErrorColor,
-            ForeColor = Color.White,
-            Cursor = Cursors.Hand,
-        };
-        uninstallButton.FlatAppearance.BorderSize = 0;
-        uninstallButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(
-            Math.Min(255, currentTheme.ErrorColor.R + 30),
-            Math.Min(255, currentTheme.ErrorColor.G + 10),
-            Math.Min(255, currentTheme.ErrorColor.B + 10));
-        uninstallButton.Click += (_, _) =>
-        {
-            using var uninstallForm = new UninstallForm();
-            uninstallForm.ShowDialog(this);
-        };
-        advancedPage.Controls.Add(uninstallButton);
+        generalPage.Controls.Add(_themePreview);
 
         // =============================================
         // TAB: Plugins (fixed)
@@ -411,6 +356,7 @@ class SettingsForm : Form
         // TAB: About (fixed, always last)
         // =============================================
         _aboutPage = CreateTabPage("About", currentTheme);
+        _aboutPage.AutoScroll = true;
         int ab = tp;
 
         // --- App icon + name + version ---
@@ -715,6 +661,50 @@ class SettingsForm : Form
         _aboutPage.Controls.Add(checkNowButton);
         _aboutPage.Controls.Add(checkResultLabel);
         _aboutPage.Controls.Add(updateLinkLabel);
+        ab += 40;
+
+        // --- UNINSTALL section (merged from Advanced tab) ---
+        _aboutPage.Controls.Add(CreateSeparator(tp, ab, tabInner));
+        ab += 14;
+
+        var uninstallSectionLabel = CreateSectionLabel("UNINSTALL", tp, ab);
+        _aboutPage.Controls.Add(uninstallSectionLabel);
+        ab += 28;
+
+        var uninstallDesc = new Label
+        {
+            Text = "Remove ProdToy from the tools folder and clean up hook\nentries from Claude Code settings. Your response history\nand app settings will be preserved.",
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = currentTheme.TextSecondary,
+            AutoSize = true,
+            Location = new Point(tp, ab),
+            BackColor = Color.Transparent,
+        };
+        _aboutPage.Controls.Add(uninstallDesc);
+        ab += 60;
+
+        var uninstallButton = new RoundedButton
+        {
+            Text = "Uninstall ProdToy",
+            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+            Size = new Size(200, 34),
+            Location = new Point(tp, ab),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = currentTheme.ErrorColor,
+            ForeColor = Color.White,
+            Cursor = Cursors.Hand,
+        };
+        uninstallButton.FlatAppearance.BorderSize = 0;
+        uninstallButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(
+            Math.Min(255, currentTheme.ErrorColor.R + 30),
+            Math.Min(255, currentTheme.ErrorColor.G + 10),
+            Math.Min(255, currentTheme.ErrorColor.B + 10));
+        uninstallButton.Click += (_, _) =>
+        {
+            using var uninstallForm = new UninstallForm();
+            uninstallForm.ShowDialog(this);
+        };
+        _aboutPage.Controls.Add(uninstallButton);
 
         // --- Bottom version label on form ---
         _versionLabel = new Label
@@ -731,8 +721,43 @@ class SettingsForm : Form
         // Set initial selection
         _themeCombo.SelectedIndex = selectedIndex;
 
-        // Build plugin tabs (plugins list + dynamic settings tabs + about at end)
-        RebuildPluginTabs();
+        // Build initial plugin list and dynamic settings tabs
+        RebuildPluginList(_pluginsPage, currentTheme, tp, tabInner);
+
+        var pluginSettingsPages = PluginManager.GetAllSettingsPages();
+        foreach (var (pluginInfo, settingsPage) in pluginSettingsPages)
+        {
+            var pluginTabPage = CreateTabPage(settingsPage.TabTitle, currentTheme);
+            pluginTabPage.Tag = $"plugin-tab:{pluginInfo.Id}";
+            try
+            {
+                var content = settingsPage.CreateContent();
+                content.Dock = DockStyle.Fill;
+                pluginTabPage.Controls.Add(content);
+            }
+            catch (Exception ex)
+            {
+                pluginTabPage.Controls.Add(new Label
+                {
+                    Text = $"Failed to load: {ex.Message}",
+                    Font = new Font("Segoe UI", 9f),
+                    ForeColor = currentTheme.ErrorColor,
+                    AutoSize = true, Location = new Point(tp, tp),
+                    BackColor = Color.Transparent,
+                });
+            }
+            _tabControl.TabPages.Add(pluginTabPage);
+        }
+
+        // About tab always last
+        _tabControl.TabPages.Add(_aboutPage);
+
+        // Recalculate tab widths
+        {
+            int tc = _tabControl.TabPages.Count;
+            int tw = (_contentWidth - 4) / Math.Max(1, tc);
+            _tabControl.ItemSize = new Size(tw, 32);
+        }
 
         // Live rebuild when plugins change
         PluginManager.PluginsChanged += OnPluginsChanged;
@@ -744,41 +769,63 @@ class SettingsForm : Form
             ApplyGlobalFont(savedGlobalFont);
     }
 
-    private void OnPluginsChanged()
+    public void OnPluginsChanged()
     {
         if (InvokeRequired)
         {
             Invoke(OnPluginsChanged);
             return;
         }
-        RebuildPluginTabs();
-    }
 
-    /// <summary>
-    /// Rebuilds the plugin list on the Plugins tab, removes/adds dynamic plugin settings tabs,
-    /// and ensures About is always the last tab. Can be called at any time.
-    /// </summary>
-    private void RebuildPluginTabs()
-    {
-        // 1. Rebuild the installed plugins list on the Plugins tab
+        // Refresh the installed plugins list
         RebuildPluginList(_pluginsPage, _currentTheme, _tp, _tabInner);
 
-        // 2. Remove old dynamic plugin tabs (tagged with "plugin-tab")
-        for (int i = _tabControl.TabPages.Count - 1; i >= 0; i--)
+        // Mark tabs for removed plugins — overlay with "uninstalled" message
+        var activePluginIds = new HashSet<string>(
+            PluginManager.GetAllSettingsPages().Select(p => p.Item1.Id),
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (TabPage page in _tabControl.TabPages)
         {
-            if (_tabControl.TabPages[i].Tag is string tag && tag == "plugin-tab")
-                _tabControl.TabPages.RemoveAt(i);
+            if (page.Tag is not string tag) continue;
+            if (!tag.StartsWith("plugin-tab:")) continue;
+
+            string pluginId = tag["plugin-tab:".Length..];
+            if (!activePluginIds.Contains(pluginId))
+            {
+                // Plugin was uninstalled — mask the tab content, keep ID for tracking
+                page.Tag = $"plugin-tab-removed:{pluginId}";
+                MaskTabContent(page);
+            }
         }
 
-        // 3. Remove About tab (we'll re-add it at the end)
-        _tabControl.TabPages.Remove(_aboutPage);
+        // Add tabs for newly installed/re-enabled plugins that don't have an active tab
+        var existingActiveTabIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (TabPage page in _tabControl.TabPages)
+        {
+            if (page.Tag is string t && t.StartsWith("plugin-tab:") && !t.StartsWith("plugin-tab-removed:"))
+                existingActiveTabIds.Add(t["plugin-tab:".Length..]);
+        }
 
-        // 4. Add dynamic plugin settings tabs
         var pluginSettingsPages = PluginManager.GetAllSettingsPages();
         foreach (var (pluginInfo, settingsPage) in pluginSettingsPages)
         {
+            if (existingActiveTabIds.Contains(pluginInfo.Id)) continue;
+
+            // Remove any stale "removed" tab for this plugin before adding fresh one
+            for (int i = _tabControl.TabPages.Count - 1; i >= 0; i--)
+            {
+                if (_tabControl.TabPages[i].Tag is string rt &&
+                    rt.Equals($"plugin-tab-removed:{pluginInfo.Id}", StringComparison.OrdinalIgnoreCase))
+                {
+                    _tabControl.TabPages.RemoveAt(i);
+                    break;
+                }
+            }
+
+            // Add fresh tab before About
             var pluginTabPage = CreateTabPage(settingsPage.TabTitle, _currentTheme);
-            pluginTabPage.Tag = "plugin-tab";
+            pluginTabPage.Tag = $"plugin-tab:{pluginInfo.Id}";
             try
             {
                 var content = settingsPage.CreateContent();
@@ -787,28 +834,64 @@ class SettingsForm : Form
             }
             catch (Exception ex)
             {
-                var errorLabel = new Label
+                pluginTabPage.Controls.Add(new Label
                 {
-                    Text = $"Failed to load settings for {pluginInfo.Name}:\n{ex.Message}",
+                    Text = $"Failed to load: {ex.Message}",
                     Font = new Font("Segoe UI", 9f),
                     ForeColor = _currentTheme.ErrorColor,
-                    AutoSize = true,
-                    MaximumSize = new Size(_tabInner, 0),
-                    Location = new Point(_tp, _tp),
+                    AutoSize = true, Location = new Point(_tp, _tp),
                     BackColor = Color.Transparent,
-                };
-                pluginTabPage.Controls.Add(errorLabel);
+                });
             }
-            _tabControl.TabPages.Add(pluginTabPage);
+
+            // Insert before About tab
+            int aboutIdx = _tabControl.TabPages.IndexOf(_aboutPage);
+            if (aboutIdx >= 0)
+                _tabControl.TabPages.Insert(aboutIdx, pluginTabPage);
+            else
+                _tabControl.TabPages.Add(pluginTabPage);
+
+            // Recalculate tab widths
+            int tabCount = _tabControl.TabPages.Count;
+            int tabWidth = (_contentWidth - 4) / Math.Max(1, tabCount);
+            _tabControl.ItemSize = new Size(tabWidth, 32);
         }
+    }
 
-        // 5. Add About tab back at the end
-        _tabControl.TabPages.Add(_aboutPage);
+    private void MaskTabContent(TabPage page)
+    {
+        // Hide all existing controls and show an overlay message
+        foreach (Control c in page.Controls)
+            c.Visible = false;
 
-        // 6. Recalculate tab widths
-        int tabCount = _tabControl.TabPages.Count;
-        int tabWidth = (_contentWidth - 4) / Math.Max(1, tabCount);
-        _tabControl.ItemSize = new Size(tabWidth, 32);
+        var overlay = new Label
+        {
+            Text = "This plugin has been uninstalled.\n\nClose the Settings window to remove this tab.",
+            Font = new Font("Segoe UI", 11f),
+            ForeColor = _currentTheme.TextSecondary,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Dock = DockStyle.Fill,
+            BackColor = _currentTheme.BgDark,
+            Tag = "uninstall-overlay",
+        };
+        page.Controls.Add(overlay);
+        overlay.BringToFront();
+    }
+
+    /// <summary>
+    /// Returns true if a plugin has been uninstalled but its settings tab is still showing
+    /// (pending removal on form close/reopen).
+    /// </summary>
+    public bool IsPluginPendingRemoval(string pluginId)
+    {
+        foreach (TabPage page in _tabControl.TabPages)
+        {
+            if (page.Tag is string tag &&
+                tag.StartsWith("plugin-tab-removed:") &&
+                tag["plugin-tab-removed:".Length..].Equals(pluginId, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
     }
 
     private static void RebuildPluginList(TabPage pluginsPage, PopupTheme theme, int tp, int tabInner)
