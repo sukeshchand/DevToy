@@ -1,0 +1,35 @@
+{
+  "catalogVersion": 1,
+  "plugins": [
+    {
+      "id": "ProdToy.Alarm",
+      "name": "Alarms",
+      "version": "1.0.0",
+      "description": "Schedule recurring alarms with popup and sound notifications",
+      "author": "ProdToy",
+      "downloadUrl": "",
+      "minHostVersion": "1.0.227",
+      "size": 0
+    },
+    {
+      "id": "ProdToy.Screenshot",
+      "name": "Screenshot",
+      "version": "1.0.0",
+      "description": "Screen capture and annotation editor",
+      "author": "ProdToy",
+      "downloadUrl": "",
+      "minHostVersion": "1.0.230",
+      "size": 0
+    },
+    {
+      "id": "ProdToy.ClaudeIntegration",
+      "name": "Claude Integration",
+      "version": "1.0.0",
+      "description": "Claude Code hooks, status line, and auto-title integration",
+      "author": "ProdToy",
+      "downloadUrl": "",
+      "minHostVersion": "1.0.231",
+      "size": 0
+    }
+  ]
+}
