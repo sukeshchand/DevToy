@@ -2,7 +2,7 @@ using ProdToy.Sdk;
 
 namespace ProdToy.Plugins.Alarm;
 
-[Plugin("ProdToy.Plugin.Alarm", "Alarms", "1.0.258",
+[Plugin("ProdToy.Plugin.Alarm", "Alarms", "1.0.262",
     Description = "Schedule recurring alarms with popup and sound notifications",
     Author = "ProdToy",
     MenuPriority = 200)]
@@ -10,6 +10,7 @@ public class AlarmPlugin : IPlugin
 {
     private IPluginContext _context = null!;
     private AlarmForm? _alarmForm;
+    private AlarmHistoryForm? _alarmHistoryForm;
 
     public void Initialize(IPluginContext context)
     {
@@ -47,6 +48,8 @@ public class AlarmPlugin : IPlugin
         {
             _alarmForm?.Close();
             _alarmForm = null;
+            _alarmHistoryForm?.Close();
+            _alarmHistoryForm = null;
         });
     }
 
@@ -55,6 +58,13 @@ public class AlarmPlugin : IPlugin
     public IReadOnlyList<MenuContribution> GetMenuItems() =>
     [
         new("Alarms...", ShowAlarmForm, Priority: 200),
+        new("Alarm History", ShowAlarmHistory, Priority: 201),
+    ];
+
+    public IReadOnlyList<MenuContribution> GetDashboardItems() =>
+    [
+        new("Alarms", ShowAlarmForm, Priority: 200),
+        new("Alarm History", ShowAlarmHistory, Priority: 201),
     ];
 
     public SettingsPageContribution? GetSettingsPage() => null;
@@ -75,6 +85,21 @@ public class AlarmPlugin : IPlugin
         if (!string.IsNullOrEmpty(savedFont) && savedFont != "Segoe UI")
             ApplyFontToForm(_alarmForm, savedFont);
         _alarmForm.Show();
+    }
+
+    private void ShowAlarmHistory()
+    {
+        if (_alarmHistoryForm != null && !_alarmHistoryForm.IsDisposed)
+        {
+            _alarmHistoryForm.BringToFront();
+            _alarmHistoryForm.Activate();
+            return;
+        }
+
+        var theme = _context.Host.CurrentTheme;
+        _alarmHistoryForm = new AlarmHistoryForm(theme, null);
+        _alarmHistoryForm.FormClosed += (_, _) => _alarmHistoryForm = null;
+        _alarmHistoryForm.Show();
     }
 
     private static void ApplyFontToForm(Control form, string fontFamily)

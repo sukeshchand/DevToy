@@ -38,6 +38,9 @@ public interface IPluginHost
     /// <summary>Register a triple-Ctrl-tap callback. Returns a disposable handle.</summary>
     IDisposable? RegisterTripleCtrl(Action callback);
 
+    /// <summary>Show the notification popup window (bring to foreground).</summary>
+    void ShowNotificationPopup();
+
     /// <summary>Notify the host that show-quotes setting changed.</summary>
     void NotifyShowQuotesChanged(bool show);
 

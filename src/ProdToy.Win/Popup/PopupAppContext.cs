@@ -9,6 +9,7 @@ class PopupAppContext : ApplicationContext
 {
     private readonly NotifyIcon _trayIcon;
     private readonly PopupForm _popupForm;
+    private readonly DashboardForm _dashboardForm;
     private readonly CancellationTokenSource _cts = new();
     private Icon _appIcon;
     private SettingsForm? _settingsForm;
@@ -29,6 +30,10 @@ class PopupAppContext : ApplicationContext
         if (!startHidden)
             _popupForm.ShowPopup(initialTitle, initialMessage, initialType, sessionId, cwd);
 
+        // Create dashboard
+        _dashboardForm = new DashboardForm(theme);
+        _dashboardForm.ShowSettingsRequested += () => ShowSettingsForm();
+
         var trayMenu = BuildTrayMenu();
 
         _trayIcon = new NotifyIcon
@@ -38,19 +43,26 @@ class PopupAppContext : ApplicationContext
             Visible = true,
             ContextMenuStrip = trayMenu,
         };
-        _trayIcon.DoubleClick += (_, _) => _popupForm.BringToForeground();
+        _trayIcon.DoubleClick += (_, _) => _dashboardForm.BringToForeground();
 
         // Initialize plugin system
         _pluginHost = new PluginHostImpl(_trayIcon, _popupForm);
         PluginManager.Initialize(_pluginHost);
 
-        // Rebuild tray menu when plugins change
+        // Rebuild tray menu and dashboard when plugins change
         PluginManager.PluginsChanged += () =>
         {
             if (_popupForm.IsHandleCreated)
-                _popupForm.Invoke(() => _trayIcon.ContextMenuStrip = BuildTrayMenu());
+                _popupForm.Invoke(() =>
+                {
+                    _trayIcon.ContextMenuStrip = BuildTrayMenu();
+                    _dashboardForm.BuildTiles();
+                });
             else
+            {
                 _trayIcon.ContextMenuStrip = BuildTrayMenu();
+                _dashboardForm.BuildTiles();
+            }
         };
 
         Task.Run(() => PipeServerLoop(_cts.Token));
@@ -67,26 +79,44 @@ class PopupAppContext : ApplicationContext
 
         // Start all loaded plugins
         PluginManager.StartAll();
+
+        // Rebuild menus and dashboard now that plugins are loaded and started
+        _trayIcon.ContextMenuStrip = BuildTrayMenu();
+        _dashboardForm.BuildTiles();
     }
 
     private ContextMenuStrip BuildTrayMenu()
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Show Last Notification", null, (_, _) => _popupForm.BringToForeground());
+        menu.Items.Add("Dashboard", null, (_, _) => _dashboardForm.BringToForeground());
 
-        // Plugin-contributed menu items
-        var pluginItems = PluginManager.GetAllMenuItems();
-        if (pluginItems.Count > 0)
+        // Plugin-contributed menu items grouped by plugin
+        var groups = PluginManager.GetGroupedMenuItems();
+        if (groups.Count > 0)
         {
             menu.Items.Add(new ToolStripSeparator());
-            foreach (var item in pluginItems)
+            foreach (var (plugin, items) in groups)
             {
-                if (item.IsSeparatorBefore)
-                    menu.Items.Add(new ToolStripSeparator());
-                var mi = new ToolStripMenuItem(item.Text);
-                mi.Click += (_, _) => item.OnClick();
-                mi.Visible = item.Visible;
-                menu.Items.Add(mi);
+                if (items.Count == 1)
+                {
+                    // Single item — show directly with plugin name prefix
+                    var item = items[0];
+                    var mi = new ToolStripMenuItem($"{plugin.Name}: {item.Text}");
+                    mi.Click += (_, _) => item.OnClick();
+                    menu.Items.Add(mi);
+                }
+                else
+                {
+                    // Multiple items — create submenu under plugin name
+                    var submenu = new ToolStripMenuItem(plugin.Name);
+                    foreach (var item in items)
+                    {
+                        var mi = new ToolStripMenuItem(item.Text);
+                        mi.Click += (_, _) => item.OnClick();
+                        submenu.DropDownItems.Add(mi);
+                    }
+                    menu.Items.Add(submenu);
+                }
             }
         }
 
@@ -206,6 +236,8 @@ class PopupAppContext : ApplicationContext
         PluginManager.StopAll();
         UpdateChecker.Stop();
         _settingsForm?.Close();
+        _dashboardForm.Close();
+        _dashboardForm.Dispose();
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
         _appIcon.Dispose();

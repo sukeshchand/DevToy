@@ -671,40 +671,24 @@ class SettingsForm : Form
         _aboutPage.Controls.Add(uninstallSectionLabel);
         ab += 28;
 
-        var uninstallDesc = new Label
+        var uninstallLink = new LinkLabel
         {
-            Text = "Remove ProdToy from the tools folder and clean up hook\nentries from Claude Code settings. Your response history\nand app settings will be preserved.",
-            Font = new Font("Segoe UI", 9f),
-            ForeColor = currentTheme.TextSecondary,
+            Text = "Uninstall ProdToy",
+            Font = new Font("Segoe UI", 8f),
+            LinkColor = currentTheme.ErrorColor,
+            ActiveLinkColor = currentTheme.ErrorColor,
+            VisitedLinkColor = currentTheme.ErrorColor,
             AutoSize = true,
             Location = new Point(tp, ab),
             BackColor = Color.Transparent,
-        };
-        _aboutPage.Controls.Add(uninstallDesc);
-        ab += 60;
-
-        var uninstallButton = new RoundedButton
-        {
-            Text = "Uninstall ProdToy",
-            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
-            Size = new Size(200, 34),
-            Location = new Point(tp, ab),
-            FlatStyle = FlatStyle.Flat,
-            BackColor = currentTheme.ErrorColor,
-            ForeColor = Color.White,
             Cursor = Cursors.Hand,
         };
-        uninstallButton.FlatAppearance.BorderSize = 0;
-        uninstallButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(
-            Math.Min(255, currentTheme.ErrorColor.R + 30),
-            Math.Min(255, currentTheme.ErrorColor.G + 10),
-            Math.Min(255, currentTheme.ErrorColor.B + 10));
-        uninstallButton.Click += (_, _) =>
+        uninstallLink.LinkClicked += (_, _) =>
         {
             using var uninstallForm = new UninstallForm();
             uninstallForm.ShowDialog(this);
         };
-        _aboutPage.Controls.Add(uninstallButton);
+        _aboutPage.Controls.Add(uninstallLink);
 
         // --- Bottom version label on form ---
         _versionLabel = new Label

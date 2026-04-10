@@ -3,7 +3,7 @@ using ProdToy.Sdk;
 
 namespace ProdToy.Plugins.ClaudeIntegration;
 
-[Plugin("ProdToy.Plugin.ClaudeIntegration", "Claude Integration", "1.0.258",
+[Plugin("ProdToy.Plugin.ClaudeIntegration", "Claude Integration", "1.0.262",
     Description = "Claude Code hooks, status line, and auto-title integration",
     Author = "ProdToy",
     MenuPriority = 300)]
@@ -21,25 +21,63 @@ public class ClaudeIntegrationPlugin : IPlugin
     {
         var settings = _context.LoadSettings<ClaudePluginSettings>();
 
-        // Sync Claude hooks with plugin settings on startup
+        // Verify and sync all Claude hooks with plugin settings
         ClaudeHookManager.UpdateClaudeHook("Stop", null, settings.HookStopEnabled);
         ClaudeHookManager.UpdateClaudeHook("Notification",
             "permission_prompt|idle_prompt|elicitation_dialog", settings.HookNotificationEnabled);
         ClaudeHookManager.UpdateClaudeHook("UserPromptSubmit", null, settings.HookUserPromptEnabled);
 
-        // Cleanup legacy hooks
-        ClaudeHookManager.CleanupOldHook();
+        // Verify and sync status line
+        var slSettings = _context.LoadSettings<ClaudePluginSettings>();
+        if (ClaudeStatusLine.IsEnabled())
+            ClaudeStatusLine.WriteConfig(slSettings);
 
         // Sync auto-title if enabled
         if (settings.AutoTitleToFolder)
             ClaudeHookManager.SetAutoTitleHook(true);
+
+        // Cleanup legacy hooks
+        ClaudeHookManager.CleanupOldHook();
+
+        _context.Log("Claude integration started — hooks and status line verified");
     }
 
-    public void Stop() { }
+    public void Stop()
+    {
+        // Remove all ProdToy hooks from Claude settings
+        try
+        {
+            ClaudeHookManager.UpdateClaudeHook("Stop", null, false);
+            ClaudeHookManager.UpdateClaudeHook("Notification",
+                "permission_prompt|idle_prompt|elicitation_dialog", false);
+            ClaudeHookManager.UpdateClaudeHook("UserPromptSubmit", null, false);
+
+            // Remove auto-title instruction
+            ClaudeHookManager.SetAutoTitleHook(false);
+
+            // Disable status line
+            if (ClaudeStatusLine.IsEnabled())
+                ClaudeStatusLine.Disable();
+
+            _context.Log("Claude integration stopped — all hooks and status line removed");
+        }
+        catch (Exception ex)
+        {
+            _context.LogError("Failed to clean up Claude hooks on stop", ex);
+        }
+    }
 
     public void Dispose() { }
 
-    public IReadOnlyList<MenuContribution> GetMenuItems() => [];
+    public IReadOnlyList<MenuContribution> GetMenuItems() =>
+    [
+        new("Show Last Notification", () => _context.Host.ShowNotificationPopup(), Priority: 50),
+    ];
+
+    public IReadOnlyList<MenuContribution> GetDashboardItems() =>
+    [
+        new("Last Notification", () => _context.Host.ShowNotificationPopup(), Priority: 50),
+    ];
 
     public SettingsPageContribution? GetSettingsPage() =>
         new("Claude CLI", () => BuildSettingsPanel(), TabOrder: 200);

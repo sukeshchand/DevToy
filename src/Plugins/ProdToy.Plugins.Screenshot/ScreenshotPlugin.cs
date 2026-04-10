@@ -2,7 +2,7 @@ using ProdToy.Sdk;
 
 namespace ProdToy.Plugins.Screenshot;
 
-[Plugin("ProdToy.Plugin.Screenshot", "Screenshot", "1.0.258",
+[Plugin("ProdToy.Plugin.Screenshot", "Screenshot", "1.0.262",
     Description = "Screen capture and annotation editor",
     Author = "ProdToy",
     MenuPriority = 100)]
@@ -63,16 +63,17 @@ public class ScreenshotPlugin : IPlugin
 
     public void Dispose() { }
 
-    public IReadOnlyList<MenuContribution> GetMenuItems()
-    {
-        var settings = _context.LoadSettings<ScreenshotPluginSettings>();
-        bool enabled = settings.ScreenshotEnabled;
-        return
-        [
-            new("Take Screenshot", TakeScreenshot, Priority: 100, Visible: enabled),
-            new("Edit Last Screenshot", EditLastScreenshot, Priority: 101, Visible: enabled),
-        ];
-    }
+    public IReadOnlyList<MenuContribution> GetMenuItems() =>
+    [
+        new("Take Screenshot", TakeScreenshot, Priority: 100),
+        new("Edit Last Screenshot", EditLastScreenshot, Priority: 101),
+    ];
+
+    public IReadOnlyList<MenuContribution> GetDashboardItems() =>
+    [
+        new("Take Screenshot", TakeScreenshot, Priority: 100),
+        new("Edit Last Screenshot", EditLastScreenshot, Priority: 101),
+    ];
 
     public SettingsPageContribution? GetSettingsPage() => null;
 

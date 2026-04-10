@@ -325,6 +325,58 @@ static class PluginManager
     }
 
     /// <summary>
+    /// Returns menu items grouped by plugin, only for plugins that have menu items.
+    /// </summary>
+    public static List<(PluginInfo Plugin, List<MenuContribution> Items)> GetGroupedMenuItems()
+    {
+        var result = new List<(PluginInfo, List<MenuContribution>)>();
+        foreach (var info in _plugins)
+        {
+            if (info.Enabled && info.Instance != null)
+            {
+                try
+                {
+                    var items = info.Instance.GetMenuItems();
+                    var visible = items.Where(i => i.Visible).ToList();
+                    if (visible.Count > 0)
+                        result.Add((info, visible));
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Plugin {info.Id} GetMenuItems failed: {ex}");
+                }
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Returns dashboard items grouped by plugin, only for plugins that have dashboard items.
+    /// </summary>
+    public static List<(PluginInfo Plugin, List<MenuContribution> Items)> GetAllDashboardItems()
+    {
+        var result = new List<(PluginInfo, List<MenuContribution>)>();
+        foreach (var info in _plugins)
+        {
+            if (info.Enabled && info.Instance != null)
+            {
+                try
+                {
+                    var items = info.Instance.GetDashboardItems();
+                    var visible = items.Where(i => i.Visible).ToList();
+                    if (visible.Count > 0)
+                        result.Add((info, visible));
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Plugin {info.Id} GetDashboardItems failed: {ex}");
+                }
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Returns all settings page contributions from enabled plugins.
     /// </summary>
     public static List<(PluginInfo Plugin, SettingsPageContribution Page)> GetAllSettingsPages()

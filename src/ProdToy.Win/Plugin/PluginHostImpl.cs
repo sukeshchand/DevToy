@@ -60,6 +60,8 @@ sealed class PluginHostImpl : IPluginHost
         GlobalFontChanged?.Invoke(fontFamily);
     }
 
+    public void ShowNotificationPopup() => _popupForm.BringToForeground();
+
     public void NotifyShowQuotesChanged(bool show) => _popupForm.SetShowQuotes(show);
 
     public void NotifyHistoryEnabledChanged(bool enabled) => _popupForm.UpdateHistoryNav();
