@@ -1,0 +1,1 @@
+Zoom in/out support: Ctrl+wheel zooms at cursor, Ctrl+/- step zoom, Ctrl+0 reset to 100%, Ctrl+9 fit to window. New toolbar zoom buttons + percentage label.

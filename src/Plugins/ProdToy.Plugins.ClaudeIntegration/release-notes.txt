@@ -1,0 +1,1 @@
+EnsureHookScript moved behind IPluginHost; plugin no longer touches host paths directly.

@@ -16,6 +16,18 @@ static class PluginManager
 
     public static IReadOnlyList<PluginInfo> Plugins => _plugins;
 
+    /// <summary>
+    /// Snapshot of installed plugin id → version (from each PluginInfo's discovered
+    /// version attribute). Returns an empty dict if Initialize has not run yet.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> GetInstalledVersions()
+    {
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var info in _plugins)
+            dict[info.Id] = info.Version;
+        return dict;
+    }
+
     /// <summary>Fires when plugins are installed, uninstalled, enabled, or disabled.</summary>
     public static event Action? PluginsChanged;
 

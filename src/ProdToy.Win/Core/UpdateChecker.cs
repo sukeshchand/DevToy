@@ -70,7 +70,9 @@ static class UpdateChecker
             if (metadata == null || string.IsNullOrWhiteSpace(metadata.Version))
                 return;
 
-            bool updateAvailable = IsNewerVersion(metadata.Version, AppVersion.Current);
+            bool hostNewer = IsNewerVersion(metadata.Version, AppVersion.Current);
+            bool anyPluginNewer = HasPluginUpdate(metadata);
+            bool updateAvailable = hostNewer || anyPluginNewer;
 
             // Fire-and-forget: log the enquiry silently (only for local paths)
             if (!IsHttpUrl(location))
@@ -86,6 +88,33 @@ static class UpdateChecker
         {
             Debug.WriteLine($"Update check failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Returns true if any plugin in the manifest is a newer version than what's
+    /// installed, OR is a brand-new plugin not present locally. Returns false if
+    /// the manifest has no plugins[] (old format / HTTP).
+    /// </summary>
+    private static bool HasPluginUpdate(UpdateMetadata metadata)
+    {
+        if (metadata.Plugins == null || metadata.Plugins.Length == 0)
+            return false;
+
+        var installed = PluginManager.GetInstalledVersions();
+        // If the plugin manager hasn't initialized yet, don't claim updates we can't verify.
+        if (installed.Count == 0)
+            return false;
+
+        foreach (var p in metadata.Plugins)
+        {
+            if (string.IsNullOrWhiteSpace(p.Id) || string.IsNullOrWhiteSpace(p.Version))
+                continue;
+            if (!installed.TryGetValue(p.Id, out var localVer))
+                continue; // plugin not installed locally → not an update for this user
+            if (IsNewerVersion(p.Version, localVer))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>

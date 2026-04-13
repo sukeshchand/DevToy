@@ -1,0 +1,1 @@
+Plugin data now persists outside the plugin directory.

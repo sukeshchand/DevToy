@@ -52,6 +52,9 @@ static class AppPaths
     /// <summary>Logs directory: Root\logs\</summary>
     public static string LogsDir { get; } = Path.Combine(Root, "logs");
 
+    /// <summary>Temporary working dir for updates and other short-lived state: Root\tmp\</summary>
+    public static string TmpDir { get; } = Path.Combine(Root, "tmp");
+
     /// <summary>Claude hooks directory: %USERPROFILE%\.claude\hooks\</summary>
     public static string ClaudeHooksDir { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "hooks");
