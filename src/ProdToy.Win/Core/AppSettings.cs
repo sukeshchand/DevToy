@@ -25,18 +25,14 @@ record AppSettingsData
     [JsonPropertyName("showQuotes")]
     public bool ShowQuotes { get; init; } = true;
 
-    public const string DefaultUpdateLocation = "https://api.github.com/repos/sukeshchand/ProdToy/releases/latest";
+    public const string DefaultUpdateLocation =
+        "https://github.com/sukeshchand/ProdToy/releases/latest/download/metadata.json";
 
     [JsonPropertyName("updateLocation")]
     public string UpdateLocation { get; init; } = "";
 
     [JsonPropertyName("startWithWindows")]
     public bool StartWithWindows { get; init; } = false;
-
-    public const string DefaultPluginCatalogUrl = "https://raw.githubusercontent.com/sukeshchand/ProdToy/main/plugin-catalog.json";
-
-    [JsonPropertyName("pluginCatalogUrl")]
-    public string PluginCatalogUrl { get; init; } = "";
 }
 
 static class AppSettings

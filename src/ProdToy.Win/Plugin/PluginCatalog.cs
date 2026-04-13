@@ -27,41 +27,44 @@ static class PluginCatalog
         || location.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Fetches the catalog from the update location.
-    /// Local path: reads {UpdateLocation}/plugin-catalog.json
-    /// HTTP: fetches from configured catalog URL or default GitHub URL
+    /// Fetches the plugin catalog from the configured update location by
+    /// reading {UpdateLocation}/metadata.json and mapping each PluginEntry
+    /// into a CatalogEntry for the UI. Works for both local/UNC paths and
+    /// HTTP update locations.
     /// </summary>
     public static async Task<List<CatalogEntry>> FetchCatalogAsync()
     {
         try
         {
             string location = GetUpdateLocation();
-
-            string json;
-            if (IsHttpUrl(location))
+            string metadataJson = await ReadTextAsync(location, "metadata.json");
+            if (string.IsNullOrWhiteSpace(metadataJson))
             {
-                // For HTTP, use dedicated catalog URL
-                var settings = AppSettings.Load();
-                string catalogUrl = string.IsNullOrEmpty(settings.PluginCatalogUrl)
-                    ? AppSettingsData.DefaultPluginCatalogUrl
-                    : settings.PluginCatalogUrl;
-                json = await _http.GetStringAsync(catalogUrl);
+                _cachedCatalog = new List<CatalogEntry>();
+                return _cachedCatalog;
             }
-            else
+
+            var meta = JsonSerializer.Deserialize<UpdateMetadata>(metadataJson);
+            if (meta?.Plugins == null || meta.Plugins.Length == 0)
             {
-                // Local/network: read plugin-catalog.json from update path
-                string catalogPath = Path.Combine(location, "plugin-catalog.json");
-                if (!File.Exists(catalogPath))
+                _cachedCatalog = new List<CatalogEntry>();
+                return _cachedCatalog;
+            }
+
+            var mapped = meta.Plugins
+                .Where(p => !string.IsNullOrWhiteSpace(p.Id))
+                .Select(p => new CatalogEntry
                 {
-                    _cachedCatalog = new List<CatalogEntry>();
-                    return _cachedCatalog;
-                }
-                json = await File.ReadAllTextAsync(catalogPath);
-            }
-
-            var manifest = JsonSerializer.Deserialize<PluginCatalogManifest>(json);
-            _cachedCatalog = manifest?.Plugins ?? new List<CatalogEntry>();
-            return _cachedCatalog;
+                    Id = p.Id,
+                    Name = string.IsNullOrWhiteSpace(p.Name) ? p.Id : p.Name,
+                    Version = p.Version,
+                    Description = p.ReleaseNotes ?? "",
+                    Author = "",
+                    DownloadUrl = p.Zip,
+                })
+                .ToList();
+            _cachedCatalog = mapped;
+            return mapped;
         }
         catch (Exception ex)
         {
@@ -71,8 +74,39 @@ static class PluginCatalog
     }
 
     /// <summary>
-    /// Installs a plugin by copying from the update location's plugins directory,
-    /// then loads and starts it via PluginManager.
+    /// Reads a file from the configured update location.
+    /// For HTTP: `location` IS the manifest URL (points directly at metadata.json),
+    /// so we fetch it as-is when fileName is "metadata.json".
+    /// For local paths: `location` is a directory, append fileName and read the file.
+    /// </summary>
+    private static async Task<string> ReadTextAsync(string location, string fileName)
+    {
+        try
+        {
+            if (IsHttpUrl(location))
+            {
+                // The configured URL is the direct manifest URL for HTTP updates.
+                // Any other fileName isn't served from this flow; caller shouldn't ask.
+                return await _http.GetStringAsync(location);
+            }
+            else
+            {
+                string path = Path.Combine(location, fileName);
+                if (!File.Exists(path)) return "";
+                return await File.ReadAllTextAsync(path);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ReadTextAsync failed for {fileName}: {ex.Message}");
+            return "";
+        }
+    }
+
+    /// <summary>
+    /// Installs a plugin by resolving its zip from the configured update location —
+    /// local copy for local/UNC paths, HTTP download via AssetDownloader for URLs —
+    /// then extracting into PluginsBinDir\{id}\ and hot-loading it via PluginManager.
     /// </summary>
     public static (bool Success, string Message) InstallPlugin(CatalogEntry entry)
     {
@@ -86,23 +120,66 @@ static class PluginCatalog
             }
 
             string location = GetUpdateLocation();
-            string sourceDir = Path.Combine(location, "plugins", entry.Id);
 
-            if (!Directory.Exists(sourceDir))
-                return (false, $"Plugin source not found: {sourceDir}");
+            // Resolve the zip path relative to the manifest. For HTTP we treat
+            // "location" as the manifest URL and download; for local we join paths.
+            string relZip = string.IsNullOrWhiteSpace(entry.DownloadUrl)
+                ? $"plugins/{entry.Id}.zip"
+                : entry.DownloadUrl;
 
-            // Copy to install directory (plugins/bin/{id}/)
-            string destDir = Path.Combine(AppPaths.PluginsBinDir, entry.Id);
-            Directory.CreateDirectory(destDir);
-            foreach (var file in Directory.GetFiles(sourceDir))
-                File.Copy(file, Path.Combine(destDir, Path.GetFileName(file)), overwrite: true);
+            string zipToExtract;
+            string? tempFileToDelete = null;
+            if (IsHttpUrl(location))
+            {
+                try
+                {
+                    tempFileToDelete = AssetDownloader
+                        .DownloadRelativeAssetAsync(location, relZip)
+                        .GetAwaiter().GetResult();
+                    zipToExtract = tempFileToDelete;
+                }
+                catch (Exception ex)
+                {
+                    return (false, $"Plugin download failed: {ex.Message}");
+                }
+            }
+            else
+            {
+                zipToExtract = Path.Combine(location, relZip.Replace('/', Path.DirectorySeparatorChar));
+                if (!File.Exists(zipToExtract))
+                    return (false, $"Plugin zip not found: {zipToExtract}");
+            }
 
-            // Discover, load, initialize, and start the plugin
-            bool loaded = PluginManager.DiscoverAndLoad(entry.Id);
+            try
+            {
+                // Extract the zip into the plugin's bin directory.
+                string destDir = Path.Combine(AppPaths.PluginsBinDir, entry.Id);
+                Directory.CreateDirectory(destDir);
+                using (var archive = ZipFile.OpenRead(zipToExtract))
+                {
+                    foreach (var zipEntry in archive.Entries)
+                    {
+                        if (string.IsNullOrEmpty(zipEntry.Name)) continue; // skip directory entries
+                        string destPath = Path.Combine(destDir, zipEntry.Name);
+                        Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+                        zipEntry.ExtractToFile(destPath, overwrite: true);
+                    }
+                }
 
-            return loaded
-                ? (true, $"Installed {entry.Name} v{entry.Version}")
-                : (false, $"Files copied but plugin failed to load. Restart app to activate.");
+                // Discover, load, initialize, and start the plugin
+                bool loaded = PluginManager.DiscoverAndLoad(entry.Id);
+
+                return loaded
+                    ? (true, $"Installed {entry.Name} v{entry.Version}")
+                    : (false, "Files extracted but plugin failed to load. Restart app to activate.");
+            }
+            finally
+            {
+                if (tempFileToDelete != null)
+                {
+                    try { File.Delete(tempFileToDelete); } catch { }
+                }
+            }
         }
         catch (Exception ex)
         {

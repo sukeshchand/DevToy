@@ -13,31 +13,20 @@ record UpdateMetadata
     [JsonPropertyName("publishedAt")]
     public string PublishedAt { get; init; } = "";
 
-    /// <summary>
-    /// Path (relative to manifest dir) to the host exe zip. Local-path flow only.
-    /// </summary>
+    /// <summary>Path (relative to manifest) to the host exe zip.</summary>
     [JsonPropertyName("hostZip")]
     public string HostZip { get; init; } = "";
 
-    /// <summary>
-    /// Per-plugin entries from the new manifest format. Empty for old/HTTP metadata.
-    /// </summary>
+    /// <summary>Per-plugin entries from the manifest format.</summary>
     [JsonPropertyName("plugins")]
     public PluginEntry[] Plugins { get; init; } = Array.Empty<PluginEntry>();
 
     /// <summary>
-    /// HTTP URL to download the bare exe from (set when update source is a URL).
-    /// Null/empty when update source is a local/network path.
+    /// Runtime-only: the URL or local path the manifest was loaded from. Used by
+    /// the updater to resolve relative asset paths for downloads. Not serialized.
     /// </summary>
     [JsonIgnore]
-    public string DownloadUrl { get; init; } = "";
-
-    /// <summary>
-    /// HTTP URL to download the full bundle zip (exe + plugins).
-    /// Preferred over DownloadUrl when available.
-    /// </summary>
-    [JsonIgnore]
-    public string BundleDownloadUrl { get; init; } = "";
+    public string ManifestUrl { get; init; } = "";
 }
 
 record PluginEntry

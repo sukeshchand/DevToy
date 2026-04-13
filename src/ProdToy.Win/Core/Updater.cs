@@ -30,84 +30,10 @@ static class Updater
             bool isHttp = location.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
                        || location.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
-            // ---- HTTP path: legacy bundle/bare exe flow, unchanged ----
-            if (isHttp)
-            {
-                string updateExe = Path.Combine(installDir, "ProdToy.update.exe");
-                string stagingPluginsDir = Path.Combine(installDir, "_update_plugins");
-                string scriptPath = Path.Combine(installDir, "_update.ps1");
-
-                string bundleUrl = metadata?.BundleDownloadUrl ?? "";
-                string exeUrl = metadata?.DownloadUrl ?? "";
-
-                if (!string.IsNullOrWhiteSpace(bundleUrl))
-                {
-                    string tempZip = Path.Combine(Path.GetTempPath(), "ProdToy_update.zip");
-                    string extractDir = Path.Combine(Path.GetTempPath(), "ProdToy_update");
-
-                    var zipBytes = _http.GetByteArrayAsync(bundleUrl).GetAwaiter().GetResult();
-                    File.WriteAllBytes(tempZip, zipBytes);
-
-                    if (Directory.Exists(extractDir))
-                        Directory.Delete(extractDir, recursive: true);
-                    ZipFile.ExtractToDirectory(tempZip, extractDir);
-
-                    string? exeInZip = FindFileRecursive(extractDir, "ProdToy.exe");
-                    if (exeInZip == null)
-                    {
-                        CleanupTemp(tempZip, extractDir);
-                        return new UpdateResult(false, "ProdToy.exe not found in update bundle.");
-                    }
-                    File.Copy(exeInZip, updateExe, overwrite: true);
-
-                    string? pluginsInZip = FindDirectoryRecursive(extractDir, "plugins");
-                    if (pluginsInZip != null)
-                        CopyDirectory(pluginsInZip, stagingPluginsDir);
-
-                    CleanupTemp(tempZip, extractDir);
-                }
-                else if (!string.IsNullOrWhiteSpace(exeUrl))
-                {
-                    var bytes = _http.GetByteArrayAsync(exeUrl).GetAwaiter().GetResult();
-                    File.WriteAllBytes(updateExe, bytes);
-                }
-                else
-                {
-                    return new UpdateResult(false, "No download URL found in the release.");
-                }
-
-                string legacyPs1 = BuildLegacyPs1(currentExe, updateExe, installDir,
-                    currentPid, scriptPath, stagingPluginsDir, pluginsInstallDir);
-                File.WriteAllText(scriptPath, legacyPs1, Encoding.UTF8);
-
-                try { File.WriteAllText(Path.Combine(installDir, "_updated.marker"), ""); }
-                catch { }
-
-                LaunchPs1(scriptPath, installDir);
-                return new UpdateResult(true, "Update started. Application will restart.");
-            }
-
-            // ---- LOCAL/UNC path: new manifest-driven zip flow ----
-            if (metadata == null)
-                return new UpdateResult(false, "No update metadata available.");
-
             // Re-read the freshest metadata directly (don't trust the cached one).
-            string manifestPath = Path.Combine(location, "metadata.json");
-            if (!File.Exists(manifestPath))
-                return new UpdateResult(false, $"metadata.json not found at {location}");
-
-            UpdateMetadata? freshMetadata;
-            try
-            {
-                freshMetadata = System.Text.Json.JsonSerializer.Deserialize<UpdateMetadata>(
-                    File.ReadAllText(manifestPath));
-            }
-            catch (Exception ex)
-            {
-                return new UpdateResult(false, $"metadata.json parse failed: {ex.Message}");
-            }
+            UpdateMetadata? freshMetadata = LoadFreshMetadata(location, isHttp);
             if (freshMetadata == null)
-                return new UpdateResult(false, "metadata.json was empty.");
+                return new UpdateResult(false, $"metadata.json not found or invalid at {location}");
 
             // Prepare a clean tmp working dir under ~/.prod-toy/tmp/.
             string tmpRoot = AppPaths.TmpDir;
@@ -124,13 +50,18 @@ static class Updater
             string stagedHostExe = "";
             if (hostNeedsUpdate && !string.IsNullOrWhiteSpace(freshMetadata.HostZip))
             {
-                string hostZipSrc = Path.Combine(location, NormalizeRelative(freshMetadata.HostZip));
-                if (!File.Exists(hostZipSrc))
-                    return new UpdateResult(false, $"Host zip not found: {hostZipSrc}");
-
                 string hostStaging = Path.Combine(tmpRoot, "host");
                 Directory.CreateDirectory(hostStaging);
-                ZipFile.ExtractToDirectory(hostZipSrc, hostStaging, overwriteFiles: true);
+
+                try
+                {
+                    FetchAndExtractZip(isHttp, location, freshMetadata.ManifestUrl,
+                        freshMetadata.HostZip, hostStaging);
+                }
+                catch (Exception ex)
+                {
+                    return new UpdateResult(false, $"Host zip fetch failed: {ex.Message}");
+                }
 
                 stagedHostExe = Path.Combine(hostStaging, "ProdToy.exe");
                 if (!File.Exists(stagedHostExe))
@@ -157,17 +88,20 @@ static class Updater
                 // New-but-not-installed plugins are not auto-installed by Update.
                 if (!localExists || !isNewer) continue;
 
-                string pluginZipSrc = Path.Combine(location, NormalizeRelative(p.Zip));
-                if (!File.Exists(pluginZipSrc))
-                {
-                    Debug.WriteLine($"Plugin zip missing for {p.Id}: {pluginZipSrc}");
-                    continue;
-                }
-
                 string pluginDest = Path.Combine(pluginsStagingRoot, p.Id);
                 Directory.CreateDirectory(pluginDest);
-                ZipFile.ExtractToDirectory(pluginZipSrc, pluginDest, overwriteFiles: true);
-                pluginsStaged++;
+
+                try
+                {
+                    FetchAndExtractZip(isHttp, location, freshMetadata.ManifestUrl,
+                        p.Zip, pluginDest);
+                    pluginsStaged++;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Plugin zip fetch failed for {p.Id}: {ex.Message}");
+                    // Best-effort: skip this plugin, keep going with others.
+                }
             }
 
             if (!hostNeedsUpdate && pluginsStaged == 0)
@@ -197,35 +131,76 @@ static class Updater
         }
     }
 
+    /// <summary>
+    /// Re-read metadata.json from the update location. Works for both local and HTTP
+    /// (unlike relying on the cached UpdateChecker.LatestMetadata which may be stale).
+    /// </summary>
+    private static UpdateMetadata? LoadFreshMetadata(string location, bool isHttp)
+    {
+        try
+        {
+            string json;
+            string manifestUrl = "";
+            if (isHttp)
+            {
+                json = _http.GetStringAsync(location).GetAwaiter().GetResult();
+                manifestUrl = location;
+            }
+            else
+            {
+                string manifestPath = Path.Combine(location, "metadata.json");
+                if (!File.Exists(manifestPath)) return null;
+                json = File.ReadAllText(manifestPath);
+            }
+
+            var meta = System.Text.Json.JsonSerializer.Deserialize<UpdateMetadata>(json);
+            if (meta == null) return null;
+            return isHttp ? meta with { ManifestUrl = manifestUrl } : meta;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"LoadFreshMetadata failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Resolve a relative asset path (from metadata.json) to a local file, then
+    /// extract that zip flat into destDir. For local updates, the source is a
+    /// file under {location}; for HTTP updates, the zip is downloaded to a temp
+    /// file first, then extracted (and the temp file deleted).
+    /// </summary>
+    private static void FetchAndExtractZip(
+        bool isHttp, string location, string manifestUrl, string relZip, string destDir)
+    {
+        if (isHttp)
+        {
+            string tempZip = AssetDownloader
+                .DownloadRelativeAssetAsync(manifestUrl, relZip)
+                .GetAwaiter().GetResult();
+            try
+            {
+                ZipFile.ExtractToDirectory(tempZip, destDir, overwriteFiles: true);
+            }
+            finally
+            {
+                try { File.Delete(tempZip); } catch { }
+            }
+        }
+        else
+        {
+            string localZip = Path.Combine(location, NormalizeRelative(relZip));
+            if (!File.Exists(localZip))
+                throw new FileNotFoundException($"Zip not found: {localZip}", localZip);
+            ZipFile.ExtractToDirectory(localZip, destDir, overwriteFiles: true);
+        }
+    }
+
     private static string? FindFileRecursive(string rootDir, string fileName)
     {
         foreach (var file in Directory.GetFiles(rootDir, fileName, SearchOption.AllDirectories))
             return file;
         return null;
-    }
-
-    private static string? FindDirectoryRecursive(string rootDir, string dirName)
-    {
-        foreach (var dir in Directory.GetDirectories(rootDir, dirName, SearchOption.AllDirectories))
-            return dir;
-        return null;
-    }
-
-    private static void CopyDirectory(string sourceDir, string destDir)
-    {
-        if (Directory.Exists(destDir))
-            Directory.Delete(destDir, recursive: true);
-        Directory.CreateDirectory(destDir);
-        foreach (var file in Directory.GetFiles(sourceDir))
-            File.Copy(file, Path.Combine(destDir, Path.GetFileName(file)), overwrite: true);
-        foreach (var dir in Directory.GetDirectories(sourceDir))
-            CopyDirectory(dir, Path.Combine(destDir, Path.GetFileName(dir)));
-    }
-
-    private static void CleanupTemp(string tempZip, string extractDir)
-    {
-        try { File.Delete(tempZip); } catch { }
-        try { if (Directory.Exists(extractDir)) Directory.Delete(extractDir, true); } catch { }
     }
 
     /// <summary>Manifest paths use forward slashes; convert to OS-native.</summary>
@@ -253,61 +228,7 @@ static class Updater
     }
 
     /// <summary>
-    /// Legacy PS1 used by the HTTP/bundle path. Same wait-then-kill semantics as before.
-    /// </summary>
-    private static string BuildLegacyPs1(string currentExe, string updateExe, string installDir,
-        int targetPid, string scriptPath, string stagingPluginsDir, string pluginsInstallDir)
-    {
-        string currentExeName = Path.GetFileName(currentExe);
-        return $@"
-# ProdToy Auto-Updater (legacy HTTP path)
-$exePath       = '{currentExe.Replace("'", "''")}'
-$exeName       = '{currentExeName.Replace("'", "''")}'
-$updateExe     = '{updateExe.Replace("'", "''")}'
-$installDir    = '{installDir.Replace("'", "''")}'
-$targetPid     = {targetPid}
-$scriptPath    = '{scriptPath.Replace("'", "''")}'
-$pluginsSource = '{stagingPluginsDir.Replace("'", "''")}'
-$pluginsDest   = '{pluginsInstallDir.Replace("'", "''")}'
-
-$waited = 0
-while ($waited -lt 10) {{
-    $proc = Get-Process -Id $targetPid -ErrorAction SilentlyContinue
-    if (-not $proc) {{ break }}
-    Start-Sleep -Seconds 2
-    $waited += 2
-}}
-
-for ($attempt = 1; $attempt -le 10; $attempt++) {{
-    $proc = Get-Process -Id $targetPid -ErrorAction SilentlyContinue
-    if (-not $proc) {{ break }}
-    try {{ Stop-Process -Id $targetPid -Force -ErrorAction Stop }} catch {{ }}
-    Start-Sleep -Seconds 1
-}}
-
-Start-Sleep -Milliseconds 500
-if (Test-Path $exePath)   {{ Remove-Item $exePath -Force -ErrorAction SilentlyContinue }}
-if (Test-Path $updateExe) {{ Rename-Item $updateExe $exeName -Force }}
-
-if (Test-Path $pluginsSource) {{
-    if (-not (Test-Path $pluginsDest)) {{ New-Item -ItemType Directory -Path $pluginsDest -Force | Out-Null }}
-    foreach ($dir in Get-ChildItem $pluginsSource -Directory) {{
-        $dest = Join-Path $pluginsDest $dir.Name
-        if (-not (Test-Path $dest)) {{ New-Item -ItemType Directory -Path $dest -Force | Out-Null }}
-        Copy-Item ""$($dir.FullName)\*"" $dest -Force -Recurse
-    }}
-    Remove-Item $pluginsSource -Recurse -Force -ErrorAction SilentlyContinue
-}}
-
-if (Test-Path $exePath) {{ Start-Process -FilePath $exePath }}
-
-Start-Sleep -Seconds 2
-Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue
-";
-    }
-
-    /// <summary>
-    /// New local-path PS1: wait 1s for graceful exit, then 12 retry-kill attempts at 5s
+    /// PS1 orchestrator: wait 1s for graceful exit, then 12 retry-kill attempts at 5s
     /// intervals (60s total). If still alive, abort and write update-failed.log so the
     /// user can retry on next launch — installdir/pluginsdir stay untouched.
     /// </summary>

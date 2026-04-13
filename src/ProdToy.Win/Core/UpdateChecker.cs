@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 
 namespace ProdToy;
 
@@ -118,7 +117,7 @@ static class UpdateChecker
     }
 
     /// <summary>
-    /// Checks for updates from a local/network path containing metadata.json and ProdToy.exe.
+    /// Load metadata.json from a local/UNC path. Returns null if the file is missing.
     /// </summary>
     private static UpdateMetadata? CheckFromLocalPath(string location)
     {
@@ -127,67 +126,23 @@ static class UpdateChecker
             return null;
 
         string json = File.ReadAllText(metadataPath);
-        return JsonSerializer.Deserialize<UpdateMetadata>(json);
+        var meta = JsonSerializer.Deserialize<UpdateMetadata>(json);
+        // ManifestUrl stays empty for local paths — Updater uses `location` directly.
+        return meta;
     }
 
     /// <summary>
-    /// Checks for updates from an HTTP URL.
-    /// Supports GitHub API format (tag_name, assets[]) and plain metadata.json format.
+    /// Fetch metadata.json over HTTP. The URL is expected to point directly at the
+    /// JSON file (e.g. https://github.com/.../releases/latest/download/metadata.json).
+    /// Stores the URL on the returned record so the Updater can resolve relative
+    /// asset paths against it.
     /// </summary>
     private static UpdateMetadata? CheckFromUrl(string url)
     {
         string json = _http.GetStringAsync(url).GetAwaiter().GetResult();
-        var root = JsonNode.Parse(json);
-        if (root == null) return null;
-
-        // GitHub API response: has "tag_name" and "assets" array
-        var tagName = root["tag_name"]?.GetValue<string>();
-        if (tagName != null)
-            return ParseGitHubRelease(root, tagName);
-
-        // Plain metadata.json format served over HTTP
-        return JsonSerializer.Deserialize<UpdateMetadata>(json);
-    }
-
-    /// <summary>
-    /// Parses a GitHub releases API response into UpdateMetadata.
-    /// </summary>
-    private static UpdateMetadata ParseGitHubRelease(JsonNode root, string tagName)
-    {
-        // Strip leading 'v' from tag (e.g. "v1.0.196" -> "1.0.196")
-        string version = tagName.StartsWith('v') ? tagName[1..] : tagName;
-
-        string releaseNotes = root["body"]?.GetValue<string>() ?? "";
-        string publishedAt = root["published_at"]?.GetValue<string>() ?? "";
-
-        // Find ProdToy.exe and ProdToy-v*.zip in assets
-        string downloadUrl = "";
-        string bundleDownloadUrl = "";
-        var assets = root["assets"]?.AsArray();
-        if (assets != null)
-        {
-            foreach (var asset in assets)
-            {
-                var name = asset?["name"]?.GetValue<string>();
-                if (name == null) continue;
-
-                if (string.Equals(name, "ProdToy.exe", StringComparison.OrdinalIgnoreCase))
-                    downloadUrl = asset?["browser_download_url"]?.GetValue<string>() ?? "";
-
-                if (name.StartsWith("ProdToy-v", StringComparison.OrdinalIgnoreCase)
-                    && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-                    bundleDownloadUrl = asset?["browser_download_url"]?.GetValue<string>() ?? "";
-            }
-        }
-
-        return new UpdateMetadata
-        {
-            Version = version,
-            ReleaseNotes = releaseNotes,
-            PublishedAt = publishedAt,
-            DownloadUrl = downloadUrl,
-            BundleDownloadUrl = bundleDownloadUrl,
-        };
+        var meta = JsonSerializer.Deserialize<UpdateMetadata>(json);
+        if (meta == null) return null;
+        return meta with { ManifestUrl = url };
     }
 
     private static async Task LogUpdateEnquiryAsync(string updateLocation, string remoteVersion, bool updateAvailable)
