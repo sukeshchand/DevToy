@@ -16,11 +16,12 @@ static class Updater
 
     public static UpdateResult Apply()
     {
+        var sw = Stopwatch.StartNew();
         try
         {
+            Log.Info("Updater.Apply started");
             var settings = AppSettings.Load();
             string location = UpdateChecker.ResolveUpdateLocation(settings.UpdateLocation);
-            var metadata = UpdateChecker.LatestMetadata;
 
             string installDir = Path.GetDirectoryName(Application.ExecutablePath)!;
             string currentExe = Application.ExecutablePath;
@@ -30,23 +31,31 @@ static class Updater
             bool isHttp = location.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
                        || location.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
+            Log.Info($"Update location={location} isHttp={isHttp} installDir={installDir} pid={currentPid}");
+
             // Re-read the freshest metadata directly (don't trust the cached one).
+            Log.Info("Loading fresh metadata.json");
             UpdateMetadata? freshMetadata = LoadFreshMetadata(location, isHttp);
             if (freshMetadata == null)
+            {
+                Log.Warn("metadata.json not found or invalid");
                 return new UpdateResult(false, $"metadata.json not found or invalid at {location}");
+            }
+            Log.Info($"Fresh metadata loaded: host v{freshMetadata.Version}, {freshMetadata.Plugins?.Length ?? 0} plugin(s), hostZip={freshMetadata.HostZip}");
 
             // Prepare a clean tmp working dir under ~/.prod-toy/tmp/.
             string tmpRoot = AppPaths.TmpDir;
             if (Directory.Exists(tmpRoot))
             {
-                try { Directory.Delete(tmpRoot, recursive: true); }
-                catch (Exception ex) { Debug.WriteLine($"Failed to clean tmp: {ex.Message}"); }
+                try { Directory.Delete(tmpRoot, recursive: true); Log.Info($"Cleaned tmp dir {tmpRoot}"); }
+                catch (Exception ex) { Log.Warn($"Failed to clean tmp: {ex.Message}"); }
             }
             Directory.CreateDirectory(tmpRoot);
 
             // Stage host zip → tmp/host/ProdToy.exe (only if a newer host is published).
             bool hostNeedsUpdate = !string.IsNullOrWhiteSpace(freshMetadata.Version)
                 && IsNewerVersion(freshMetadata.Version, AppVersion.Current);
+            Log.Info($"Host update needed: {hostNeedsUpdate} (current={AppVersion.Current}, remote={freshMetadata.Version})");
             string stagedHostExe = "";
             if (hostNeedsUpdate && !string.IsNullOrWhiteSpace(freshMetadata.HostZip))
             {
@@ -55,11 +64,15 @@ static class Updater
 
                 try
                 {
+                    Log.Info($"Fetching host zip: {freshMetadata.HostZip}");
+                    var fetchSw = Stopwatch.StartNew();
                     FetchAndExtractZip(isHttp, location, freshMetadata.ManifestUrl,
                         freshMetadata.HostZip, hostStaging);
+                    Log.Info($"Host zip extracted to {hostStaging} in {fetchSw.ElapsedMilliseconds}ms");
                 }
                 catch (Exception ex)
                 {
+                    Log.Error("Host zip fetch failed", ex);
                     return new UpdateResult(false, $"Host zip fetch failed: {ex.Message}");
                 }
 
@@ -68,9 +81,13 @@ static class Updater
                 {
                     string? found = FindFileRecursive(hostStaging, "ProdToy.exe");
                     if (found == null)
+                    {
+                        Log.Error("ProdToy.exe missing inside host zip");
                         return new UpdateResult(false, "ProdToy.exe missing inside host zip.");
+                    }
                     stagedHostExe = found;
                 }
+                Log.Info($"Staged host exe: {stagedHostExe}");
             }
 
             // Stage plugin zips → tmp/plugins/{id}/ — only those that are newer or missing locally.
@@ -84,6 +101,7 @@ static class Updater
 
                 bool localExists = installedVersions.TryGetValue(p.Id, out var localVer);
                 bool isNewer = localExists && IsNewerVersion(p.Version, localVer ?? "");
+                Log.Info($"Plugin {p.Id}: installed={localVer ?? "<none>"} remote={p.Version} willStage={localExists && isNewer}");
                 // Only stage plugins that are installed AND newer remotely.
                 // New-but-not-installed plugins are not auto-installed by Update.
                 if (!localExists || !isNewer) continue;
@@ -93,19 +111,26 @@ static class Updater
 
                 try
                 {
+                    Log.Info($"Fetching plugin zip: {p.Zip}");
+                    var pluginSw = Stopwatch.StartNew();
                     FetchAndExtractZip(isHttp, location, freshMetadata.ManifestUrl,
                         p.Zip, pluginDest);
+                    Log.Info($"Plugin {p.Id} extracted to {pluginDest} in {pluginSw.ElapsedMilliseconds}ms");
                     pluginsStaged++;
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Plugin zip fetch failed for {p.Id}: {ex.Message}");
+                    Log.Error($"Plugin zip fetch failed for {p.Id}", ex);
                     // Best-effort: skip this plugin, keep going with others.
                 }
             }
 
+            Log.Info($"Plugins staged: {pluginsStaged}");
             if (!hostNeedsUpdate && pluginsStaged == 0)
+            {
+                Log.Warn("Nothing new to update");
                 return new UpdateResult(false, "Nothing new to update.");
+            }
 
             // Write the new orchestration PS1 next to the staged files.
             string ps1Path = Path.Combine(tmpRoot, "_update.ps1");
@@ -118,15 +143,18 @@ static class Updater
                 pluginsStagingRoot: pluginsStagingRoot,
                 targetPid: currentPid);
             File.WriteAllText(ps1Path, ps1, Encoding.UTF8);
+            Log.Info($"Wrote orchestrator {ps1Path}");
 
             try { File.WriteAllText(Path.Combine(installDir, "_updated.marker"), ""); }
-            catch { }
+            catch (Exception ex) { Log.Warn($"Failed to write _updated.marker: {ex.Message}"); }
 
             LaunchPs1(ps1Path, tmpRoot);
+            Log.Info($"Launched orchestrator, Apply total={sw.ElapsedMilliseconds}ms — host will exit to allow swap");
             return new UpdateResult(true, "Update started. Application will restart.");
         }
         catch (Exception ex)
         {
+            Log.Error($"Updater.Apply failed after {sw.ElapsedMilliseconds}ms", ex);
             return new UpdateResult(false, $"Update failed: {ex.Message}");
         }
     }
@@ -137,29 +165,40 @@ static class Updater
     /// </summary>
     private static UpdateMetadata? LoadFreshMetadata(string location, bool isHttp)
     {
+        var sw = Stopwatch.StartNew();
         try
         {
             string json;
             string manifestUrl = "";
             if (isHttp)
             {
+                Log.Info($"HTTP GET {location}");
                 json = _http.GetStringAsync(location).GetAwaiter().GetResult();
                 manifestUrl = location;
+                Log.Info($"HTTP GET metadata succeeded in {sw.ElapsedMilliseconds}ms ({json.Length} bytes)");
             }
             else
             {
                 string manifestPath = Path.Combine(location, "metadata.json");
-                if (!File.Exists(manifestPath)) return null;
+                if (!File.Exists(manifestPath))
+                {
+                    Log.Warn($"metadata.json not found at {manifestPath}");
+                    return null;
+                }
                 json = File.ReadAllText(manifestPath);
             }
 
             var meta = System.Text.Json.JsonSerializer.Deserialize<UpdateMetadata>(json);
-            if (meta == null) return null;
+            if (meta == null)
+            {
+                Log.Warn("metadata.json deserialized to null");
+                return null;
+            }
             return isHttp ? meta with { ManifestUrl = manifestUrl } : meta;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"LoadFreshMetadata failed: {ex.Message}");
+            Log.Error($"LoadFreshMetadata failed after {sw.ElapsedMilliseconds}ms", ex);
             return null;
         }
     }

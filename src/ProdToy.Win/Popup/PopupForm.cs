@@ -1091,14 +1091,14 @@ class PopupForm : Form
             _updateAvailableLabel.Top);
     }
 
-    private void OnUpdateClick()
+    private async void OnUpdateClick()
     {
         _updateButton.Text = "Updating...";
         _updateButton.Enabled = false;
 
         try
         {
-            var result = Updater.Apply();
+            var result = await Task.Run(Updater.Apply);
             if (result.Success)
             {
                 _forceExit = true;

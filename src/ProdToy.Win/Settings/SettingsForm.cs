@@ -614,11 +614,11 @@ class SettingsForm : Form
             Cursor = Cursors.Hand,
             Visible = false,
         };
-        updateLinkLabel.Click += (_, _) =>
+        updateLinkLabel.Click += async (_, _) =>
         {
             updateLinkLabel.Text = "Updating...";
             updateLinkLabel.Enabled = false;
-            var result = Updater.Apply();
+            var result = await Task.Run(Updater.Apply);
             if (result.Success)
             {
                 Application.Exit();

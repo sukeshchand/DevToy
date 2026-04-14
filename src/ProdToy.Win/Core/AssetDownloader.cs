@@ -37,24 +37,37 @@ static class AssetDownloader
             ? new[] { siblingUrl }
             : new[] { siblingUrl, flatUrl };
 
+        Log.Info($"AssetDownloader: {relPath} → {attempts.Length} attempt(s): {string.Join(" | ", attempts)}");
+
         Exception? lastError = null;
         foreach (var url in attempts)
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                var bytes = await _http.GetByteArrayAsync(url);
+                Log.Info($"GET {url}");
+                using var resp = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                Log.Info($"  status={(int)resp.StatusCode} {resp.StatusCode} len={resp.Content.Headers.ContentLength?.ToString() ?? "?"} in {sw.ElapsedMilliseconds}ms");
+                resp.EnsureSuccessStatusCode();
+
                 string tempFile = Path.Combine(Path.GetTempPath(),
                     $"prodtoy_{Guid.NewGuid():N}_{Path.GetFileName(cleanedRel)}");
-                await File.WriteAllBytesAsync(tempFile, bytes);
+                using (var fs = File.Create(tempFile))
+                {
+                    await resp.Content.CopyToAsync(fs);
+                }
+                var info = new FileInfo(tempFile);
+                Log.Info($"  saved {info.Length} bytes to {tempFile} in {sw.ElapsedMilliseconds}ms total");
                 return tempFile;
             }
             catch (Exception ex)
             {
                 lastError = ex;
-                Debug.WriteLine($"Asset download failed for {url}: {ex.Message}");
+                Log.Warn($"GET {url} failed after {sw.ElapsedMilliseconds}ms: {ex.Message}");
             }
         }
 
+        Log.Error($"All attempts failed for {relPath}", lastError);
         throw new InvalidOperationException(
             $"Failed to download {relPath}. Tried: {string.Join(", ", attempts)}",
             lastError);
