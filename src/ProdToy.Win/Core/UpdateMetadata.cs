@@ -17,6 +17,10 @@ record UpdateMetadata
     [JsonPropertyName("hostZip")]
     public string HostZip { get; init; } = "";
 
+    /// <summary>SHA256 (hex, lowercase) of the host zip. Empty = unverifiable, accept.</summary>
+    [JsonPropertyName("hostSha256")]
+    public string HostSha256 { get; init; } = "";
+
     /// <summary>Per-plugin entries from the manifest format.</summary>
     [JsonPropertyName("plugins")]
     public PluginEntry[] Plugins { get; init; } = Array.Empty<PluginEntry>();
@@ -49,4 +53,8 @@ record PluginEntry
     /// <summary>Path (relative to manifest dir) to the plugin zip.</summary>
     [JsonPropertyName("zip")]
     public string Zip { get; init; } = "";
+
+    /// <summary>SHA256 (hex, lowercase) of the plugin zip. Empty = unverifiable, accept.</summary>
+    [JsonPropertyName("sha256")]
+    public string Sha256 { get; init; } = "";
 }

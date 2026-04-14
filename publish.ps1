@@ -178,7 +178,8 @@ foreach ($plugin in $pluginProjects) {
     if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
     Compress-Archive -Path "$stagingDir\*" -DestinationPath $zipPath
     Remove-Item $stagingDir -Recurse -Force
-    Write-Host "  Packaged $($plugin.Id).zip (v$pluginVersion)" -ForegroundColor Gray
+    $pluginSha = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-Host "  Packaged $($plugin.Id).zip (v$pluginVersion, sha256=$($pluginSha.Substring(0,12))...)" -ForegroundColor Gray
 
     # Use ordered hashtable to preserve property order in the resulting JSON.
     $pluginManifestEntries += [ordered]@{
@@ -188,6 +189,7 @@ foreach ($plugin in $pluginProjects) {
         releaseNotes = $pluginNotes
         publishedAt  = $publishedAt
         zip          = "plugins/$($plugin.Id).zip"
+        sha256       = $pluginSha
     }
 }
 
@@ -195,6 +197,8 @@ foreach ($plugin in $pluginProjects) {
 Write-Host "Packaging host zip..." -ForegroundColor Cyan
 $hostZipPath = Join-Path $releaseDir "ProdToy.zip"
 Compress-Archive -Path (Join-Path $releaseDir "ProdToy.exe") -DestinationPath $hostZipPath -Force
+$hostSha = (Get-FileHash $hostZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+Write-Host "  ProdToy.zip sha256=$($hostSha.Substring(0,12))..." -ForegroundColor Gray
 
 # --- Build the installer (ProdToySetup.exe) ---
 Write-Host "Publishing installer..." -ForegroundColor Cyan
@@ -213,11 +217,12 @@ if (-not (Test-Path (Join-Path $releaseDir "ProdToySetup.exe"))) {
 
 # --- Generate metadata.json ---
 $metadataObject = [ordered]@{
-    version      = $newVersion
-    releaseNotes = $ReleaseNotes
-    publishedAt  = $publishedAt
-    hostZip      = "ProdToy.zip"
-    plugins      = $pluginManifestEntries
+    version       = $newVersion
+    releaseNotes  = $ReleaseNotes
+    publishedAt   = $publishedAt
+    hostZip       = "ProdToy.zip"
+    hostSha256    = $hostSha
+    plugins       = $pluginManifestEntries
 }
 $metadataJson = $metadataObject | ConvertTo-Json -Depth 5
 $metadataPath = Join-Path $releaseDir "metadata.json"

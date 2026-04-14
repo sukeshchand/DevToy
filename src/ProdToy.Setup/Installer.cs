@@ -17,29 +17,27 @@ static class Installer
     public record InstallResult(bool Success, string Message);
 
     /// <summary>
-    /// Locate bundled artifacts. They live next to the running installer exe
-    /// (the publish output places ProdToySetup.exe alongside ProdToy.zip and
-    /// plugins/*.zip and metadata.json).
+    /// Default bundle location: next to the running installer exe. Used when
+    /// Run() is called without a bundleDir (e.g. offline install with zips
+    /// shipped alongside ProdToySetup.exe).
     /// </summary>
-    public static string BundleDir => Path.GetDirectoryName(Application.ExecutablePath)!;
+    public static string DefaultBundleDir => Path.GetDirectoryName(Application.ExecutablePath)!;
 
-    public static string HostZipPath => Path.Combine(BundleDir, "ProdToy.zip");
-
-    public static string PluginsBundleDir => Path.Combine(BundleDir, "plugins");
-
-    public static string MetadataPath => Path.Combine(BundleDir, "metadata.json");
+    public static string DefaultMetadataPath => Path.Combine(DefaultBundleDir, "metadata.json");
 
     /// <summary>
-    /// Returns the version of the bundled host (from metadata.json if present,
-    /// otherwise falls back to the installer's own AppVersion.Current).
+    /// Returns the version of the bundled host (from metadata.json next to the
+    /// installer if present, otherwise falls back to the installer's own
+    /// AppVersion.Current). Used by SetupForm for display BEFORE bootstrap
+    /// download runs, so it can only see a sibling metadata.json.
     /// </summary>
     public static string ReadBundledVersion()
     {
         try
         {
-            if (File.Exists(MetadataPath))
+            if (File.Exists(DefaultMetadataPath))
             {
-                var json = JsonNode.Parse(File.ReadAllText(MetadataPath));
+                var json = JsonNode.Parse(File.ReadAllText(DefaultMetadataPath));
                 var v = json?["version"]?.GetValue<string>();
                 if (!string.IsNullOrWhiteSpace(v)) return v;
             }
@@ -51,12 +49,28 @@ static class Installer
         return AppVersion.Current;
     }
 
-    public static InstallResult Run()
+    /// <summary>
+    /// Runs the install against the given bundle directory. The directory must
+    /// contain ProdToy.zip, metadata.json, and a plugins\*.zip subdir — either
+    /// shipped alongside the installer or assembled by BootstrapDownloader.
+    /// </summary>
+    public static InstallResult Run(string bundleDir, Action<string> onProgress)
     {
+        string hostZipPath = Path.Combine(bundleDir, "ProdToy.zip");
+        string pluginsBundleDir = Path.Combine(bundleDir, "plugins");
+        string metadataPath = Path.Combine(bundleDir, "metadata.json");
+
         var log = new StringBuilder();
+        void Report(string msg)
+        {
+            log.AppendLine(msg);
+            try { onProgress(msg); } catch { }
+        }
+
         try
         {
             // Step 1: Kill any running ProdToy instances (except this installer).
+            Report("Stopping any running ProdToy instances...");
             int currentPid = Environment.ProcessId;
             foreach (var proc in Process.GetProcessesByName("ProdToy"))
             {
@@ -65,42 +79,45 @@ static class Installer
                 {
                     proc.Kill();
                     proc.WaitForExit(3000);
-                    log.AppendLine($"Closed running ProdToy (PID {proc.Id}).");
+                    Report($"  Closed ProdToy PID {proc.Id}");
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Could not kill ProdToy PID {proc.Id}: {ex.Message}");
+                    Report($"  Warning: could not kill PID {proc.Id}: {ex.Message}");
                 }
             }
 
             // Step 2: Ensure install dir exists.
             Directory.CreateDirectory(AppPaths.Root);
+            Report($"Install directory: {AppPaths.Root}");
 
             // Step 3: Extract ProdToy.zip → Root\ProdToy.exe
-            if (!File.Exists(HostZipPath))
-                return new InstallResult(false, $"ProdToy.zip not found next to installer at {HostZipPath}.");
+            if (!File.Exists(hostZipPath))
+                return new InstallResult(false, $"ProdToy.zip not found at {hostZipPath}.");
 
-            ExtractZipFlat(HostZipPath, AppPaths.Root);
-            log.AppendLine($"Installed host exe to {AppPaths.ExePath}");
+            Report($"Extracting host exe from {Path.GetFileName(hostZipPath)}...");
+            ExtractZipFlat(hostZipPath, AppPaths.Root);
+            Report($"  Host exe → {AppPaths.ExePath}");
 
             // Step 4: Extract each plugin zip → Root\plugins\bin\{PluginId}\
             int pluginCount = 0;
-            if (Directory.Exists(PluginsBundleDir))
+            if (Directory.Exists(pluginsBundleDir))
             {
                 Directory.CreateDirectory(AppPaths.PluginsBinDir);
-                foreach (var zipPath in Directory.GetFiles(PluginsBundleDir, "*.zip"))
+                foreach (var zipPath in Directory.GetFiles(pluginsBundleDir, "*.zip"))
                 {
                     string pluginId = Path.GetFileNameWithoutExtension(zipPath);
                     string destDir = Path.Combine(AppPaths.PluginsBinDir, pluginId);
                     Directory.CreateDirectory(destDir);
                     ExtractZipFlat(zipPath, destDir);
+                    Report($"  Plugin {pluginId} → {destDir}");
                     pluginCount++;
                 }
-                log.AppendLine($"Installed {pluginCount} plugin package(s).");
+                Report($"Installed {pluginCount} plugin package(s).");
             }
             else
             {
-                log.AppendLine("No bundled plugins directory found (skipping plugin install).");
+                Report("No bundled plugins directory found (skipping plugin install).");
             }
 
             // Step 5: Copy the installer exe itself to install dir so Windows
@@ -111,12 +128,12 @@ static class Installer
                 if (!string.Equals(runningSetup, AppPaths.SetupExePath, StringComparison.OrdinalIgnoreCase))
                 {
                     File.Copy(runningSetup, AppPaths.SetupExePath, overwrite: true);
-                    log.AppendLine($"Copied installer to {AppPaths.SetupExePath}");
+                    Report($"Copied installer to {AppPaths.SetupExePath}");
                 }
             }
             catch (Exception ex)
             {
-                log.AppendLine($"Warning: could not copy installer: {ex.Message}");
+                Report($"Warning: could not copy installer: {ex.Message}");
             }
 
             // Step 6: Write the hook script from embedded resource.
@@ -124,7 +141,7 @@ static class Installer
             string ps1Path = Path.Combine(AppPaths.ClaudeHooksDir, "Show-ProdToy.ps1");
             string ps1Content = LoadEmbeddedHookScript(AppPaths.ExePath);
             File.WriteAllText(ps1Path, ps1Content, Encoding.UTF8);
-            log.AppendLine($"Hook script written to {ps1Path}");
+            Report($"Hook script written to {ps1Path}");
 
             // Step 7: Back up and merge Claude settings.json.
             if (File.Exists(AppPaths.ClaudeSettingsFile))
@@ -133,29 +150,46 @@ static class Installer
                 string backupPath = Path.Combine(
                     Path.GetDirectoryName(AppPaths.ClaudeSettingsFile)!,
                     $"settings.backup_{timestamp}.json");
-                try { File.Copy(AppPaths.ClaudeSettingsFile, backupPath, overwrite: false); }
+                try
+                {
+                    File.Copy(AppPaths.ClaudeSettingsFile, backupPath, overwrite: false);
+                    Report($"Backed up Claude settings to {Path.GetFileName(backupPath)}");
+                }
                 catch { /* backup is best-effort */ }
             }
             MergeHooksIntoSettings();
-            log.AppendLine($"Configured Claude hooks in {AppPaths.ClaudeSettingsFile}");
+            Report($"Configured Claude hooks in {AppPaths.ClaudeSettingsFile}");
 
-            // Step 8: Register in Windows Apps & Features with the bundled version.
+            // Step 8: Register in Windows Apps & Features using the version from
+            //         the bundle's metadata.json (not AppVersion.Current — they
+            //         could differ when Setup bootstraps a newer release).
             try
             {
-                string bundledVersion = ReadBundledVersion();
+                string bundledVersion = AppVersion.Current;
+                try
+                {
+                    if (File.Exists(metadataPath))
+                    {
+                        var json = JsonNode.Parse(File.ReadAllText(metadataPath));
+                        var v = json?["version"]?.GetValue<string>();
+                        if (!string.IsNullOrWhiteSpace(v)) bundledVersion = v;
+                    }
+                }
+                catch { }
                 AppRegistry.Register(bundledVersion);
-                log.AppendLine($"Registered v{bundledVersion} in Apps & Features.");
+                Report($"Registered v{bundledVersion} in Apps & Features.");
             }
             catch (Exception ex)
             {
-                log.AppendLine($"Warning: could not register in Apps & Features: {ex.Message}");
+                Report($"Warning: could not register in Apps & Features: {ex.Message}");
             }
 
+            Report("Installation complete.");
             return new InstallResult(true, log.ToString());
         }
         catch (Exception ex)
         {
-            log.AppendLine($"Error: {ex.Message}");
+            Report($"Error: {ex.Message}");
             return new InstallResult(false, log.ToString());
         }
     }

@@ -24,9 +24,12 @@ static class AssetDownloader
     /// Download a relative asset into a temp file and return its path.
     /// Caller is responsible for deleting the temp file when done.
     /// Tries "{manifestDir}/{relPath}" first, then "{manifestDir}/{basename(relPath)}".
+    /// If expectedSha256 is non-empty, the downloaded file is hashed and compared
+    /// case-insensitively; mismatch deletes the file and throws.
     /// Throws if both attempts fail.
     /// </summary>
-    public static async Task<string> DownloadRelativeAssetAsync(string manifestUrl, string relPath)
+    public static async Task<string> DownloadRelativeAssetAsync(
+        string manifestUrl, string relPath, string expectedSha256 = "")
     {
         string baseDir = GetDirectoryUrl(manifestUrl);
         string cleanedRel = relPath.TrimStart('/', '\\').Replace('\\', '/');
@@ -58,6 +61,20 @@ static class AssetDownloader
                 }
                 var info = new FileInfo(tempFile);
                 Log.Info($"  saved {info.Length} bytes to {tempFile} in {sw.ElapsedMilliseconds}ms total");
+
+                if (!string.IsNullOrWhiteSpace(expectedSha256))
+                {
+                    string actual = ComputeSha256(tempFile);
+                    if (!actual.Equals(expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        try { File.Delete(tempFile); } catch { }
+                        string msg = $"SHA256 mismatch for {Path.GetFileName(cleanedRel)}: " +
+                                     $"expected {expectedSha256.Trim()}, got {actual}";
+                        Log.Error(msg);
+                        throw new InvalidOperationException(msg);
+                    }
+                    Log.Info($"  sha256 verified ({actual.Substring(0, 12)}...)");
+                }
                 return tempFile;
             }
             catch (Exception ex)
@@ -71,6 +88,18 @@ static class AssetDownloader
         throw new InvalidOperationException(
             $"Failed to download {relPath}. Tried: {string.Join(", ", attempts)}",
             lastError);
+    }
+
+    /// <summary>
+    /// Compute SHA256 of a file and return lowercase hex. Used to verify
+    /// downloaded zips against the hash advertised in metadata.json.
+    /// </summary>
+    public static string ComputeSha256(string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        var hash = sha.ComputeHash(stream);
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     /// <summary>Strip the trailing filename component off a URL, keeping the scheme.</summary>

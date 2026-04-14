@@ -16,6 +16,7 @@ class SetupForm : Form
     private readonly RoundedButton _installButton;
     private readonly RoundedButton _cancelButton;
     private readonly Label _statusLabel;
+    private readonly TextBox _logBox;
     private readonly bool _repairMode;
 
     public SetupForm()
@@ -176,13 +177,30 @@ class SetupForm : Form
             Font = new Font("Segoe UI", 9f),
             ForeColor = _theme.TextSecondary,
             AutoSize = false,
-            Size = new Size(430, 36),
+            Size = new Size(484, 20),
             Location = new Point(28, infoY),
             BackColor = Color.Transparent,
         };
+        infoY += 24;
 
-        int buttonY = infoY + 44;
-        int formWidth = 480;
+        int formWidth = 540;
+
+        _logBox = new TextBox
+        {
+            Multiline = true,
+            ReadOnly = true,
+            ScrollBars = ScrollBars.Vertical,
+            WordWrap = false,
+            Font = new Font("Consolas", 8.5f),
+            BackColor = _theme.BgHeader,
+            ForeColor = _theme.TextPrimary,
+            BorderStyle = BorderStyle.FixedSingle,
+            Size = new Size(formWidth - 56, 180),
+            Location = new Point(28, infoY),
+            Visible = false,
+        };
+
+        int buttonY = infoY + _logBox.Height + 14;
 
         var buttonSep = new Panel
         {
@@ -225,7 +243,7 @@ class SetupForm : Form
 
         ClientSize = new Size(formWidth, buttonY + 62);
 
-        Controls.AddRange(new Control[] { headerPanel, setupVersionLabel, locationLabel, _statusLabel, buttonSep, _installButton, _cancelButton });
+        Controls.AddRange(new Control[] { headerPanel, setupVersionLabel, locationLabel, _statusLabel, _logBox, buttonSep, _installButton, _cancelButton });
 
         Shown += (_, _) =>
         {
@@ -236,18 +254,29 @@ class SetupForm : Form
         };
     }
 
+    private void AppendLog(string line)
+    {
+        if (InvokeRequired) { BeginInvoke(new Action<string>(AppendLog), line); return; }
+        _logBox.AppendText(line + Environment.NewLine);
+    }
+
     private async void OnInstallClick(object? sender, EventArgs e)
     {
         _installButton.Enabled = false;
         _installButton.Text = "Working...";
         _installButton.BackColor = _theme.PrimaryDim;
         _cancelButton.Enabled = false;
-        _statusLabel.Text = "Installing...";
+        _statusLabel.Text = "Working — see log below...";
         _statusLabel.ForeColor = _theme.TextSecondary;
+        _logBox.Visible = true;
 
         try
         {
-            var result = await Task.Run(() => Installer.Run());
+            // Phase 1: ensure we have a bundle (offline sibling or GitHub download).
+            string bundleDir = await BootstrapDownloader.EnsureBundleAsync(AppendLog);
+
+            // Phase 2: run the actual installer against the resolved bundle.
+            var result = await Task.Run(() => Installer.Run(bundleDir, AppendLog));
 
             if (result.Success)
             {

@@ -155,7 +155,78 @@ static class Program
         string sessionId = latest?.SessionId ?? "";
         string cwd = latest?.Cwd ?? "";
 
-        Application.Run(new PopupAppContext(title, message, type, sessionId, cwd, startHidden: startHidden));
+        // If we came back from an update, the PS1 is polling for either
+        // _update_ok.marker (we're healthy) or _update_fail.marker (we died
+        // during init). Write the fail marker first so any crash in the
+        // construction path is observable — we'll overwrite it with OK on
+        // successful start, and then let the PS1's Phase 5 clean tmp.
+        string okMarker = Path.Combine(AppPaths.Root, "_update_ok.marker");
+        string failMarker = Path.Combine(AppPaths.Root, "_update_fail.marker");
+
+        PopupAppContext? ctx = null;
+        try
+        {
+            ctx = new PopupAppContext(title, message, type, sessionId, cwd, startHidden: startHidden);
+
+            if (justUpdated)
+            {
+                // Signal PS1 that the new host constructed successfully.
+                try
+                {
+                    File.WriteAllText(okMarker, "");
+                    Log.Info("Wrote _update_ok.marker — signalling PS1 health check");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn($"Failed to write _update_ok.marker: {ex.Message}");
+                }
+            }
+            else
+            {
+                // Not a post-update run — opportunistically clean any stale tmp
+                // from a previous update. Only delete when there is no
+                // update-failed.log inside, so post-mortem data is preserved.
+                CleanupStaleUpdateTmp();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("PopupAppContext construction failed", ex);
+            if (justUpdated)
+            {
+                try { File.WriteAllText(failMarker, ex.ToString()); } catch { }
+            }
+            throw;
+        }
+
+        Application.Run(ctx!);
+    }
+
+    /// <summary>
+    /// Removes ~/.prod-toy/tmp if it only contains successful-update leftovers.
+    /// If a previous update wrote update-failed.log, the whole tmp dir is left
+    /// in place so the user or support can inspect update.log for the failure.
+    /// </summary>
+    private static void CleanupStaleUpdateTmp()
+    {
+        try
+        {
+            if (!Directory.Exists(AppPaths.TmpDir)) return;
+
+            string failLog = Path.Combine(AppPaths.TmpDir, "update-failed.log");
+            if (File.Exists(failLog))
+            {
+                Log.Warn($"Previous update failed — leaving {AppPaths.TmpDir} in place for post-mortem");
+                return;
+            }
+
+            Directory.Delete(AppPaths.TmpDir, recursive: true);
+            Log.Info("Stale update tmp dir removed");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Stale tmp cleanup failed: {ex.Message}");
+        }
     }
 
     /// <summary>
