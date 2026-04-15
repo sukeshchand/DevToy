@@ -57,4 +57,17 @@ record ClaudePluginSettings
     // a 30-minute snooze survives an app restart. (The host used to keep
     // this in-memory; we deliberately upgrade to persistent here.)
     [JsonPropertyName("snoozeUntil")] public DateTime SnoozeUntil { get; init; } = DateTime.MinValue;
+
+    // --- Telegram ---
+    // Outbound-only notification channel that runs alongside the popup/balloon.
+    // The bot token is stored in plaintext here (same as the legacy Send-Pushover.ps1
+    // hook); the file lives under the per-user plugin data dir so only the current
+    // Windows account can read it. Upgrade to DPAPI is a future improvement.
+    [JsonPropertyName("telegramEnabled")] public bool TelegramEnabled { get; init; } = false;
+    [JsonPropertyName("telegramBotToken")] public string TelegramBotToken { get; init; } = "";
+    [JsonPropertyName("telegramChatId")] public string TelegramChatId { get; init; } = "";
+    [JsonPropertyName("telegramPrefix")] public string TelegramPrefix { get; init; } = "";
+    [JsonPropertyName("telegramMaxChars")] public int TelegramMaxChars { get; init; } = 300;
+    [JsonPropertyName("telegramOnStop")] public bool TelegramOnStop { get; init; } = true;
+    [JsonPropertyName("telegramOnNotification")] public bool TelegramOnNotification { get; init; } = false;
 }
