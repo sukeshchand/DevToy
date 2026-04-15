@@ -6,7 +6,7 @@ namespace ProdToy;
 
 class DashboardForm : Form
 {
-    private readonly PopupTheme _theme;
+    private PopupTheme _theme;
     private readonly Panel _contentPanel;
     private const int Pad = 24;
     private const int TileWidth = 220;
@@ -49,6 +49,17 @@ class DashboardForm : Form
     private void OnPluginsChanged()
     {
         if (InvokeRequired) { Invoke(OnPluginsChanged); return; }
+        BuildTiles();
+    }
+
+    public void ApplyTheme(PopupTheme theme)
+    {
+        _theme = theme;
+        BackColor = theme.BgDark;
+        ForeColor = theme.TextPrimary;
+        var oldIcon = Icon;
+        Icon = Themes.CreateAppIcon(theme.Primary);
+        oldIcon?.Dispose();
         BuildTiles();
     }
 

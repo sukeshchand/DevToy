@@ -325,10 +325,13 @@ sealed class ChatPopupForm : Form, IPluginPopup
 
         Shown += (_, _) => { UpdateHistoryNav(); PositionControls(); };
         Resize += (_, _) => PositionControls();
+        // Defer WebView2 init until the form handle exists. Calling
+        // EnsureCoreWebView2Async from the constructor races the form's HWND
+        // creation and can deadlock the UI thread, which presents as
+        // "(Not Responding)" with white placeholder controls.
+        Load += (_, _) => InitializeWebView2();
 
         _host.ThemeChanged += OnThemeChanged;
-
-        InitializeWebView2();
     }
 
     public bool IsVisible => Visible;
@@ -494,8 +497,10 @@ sealed class ChatPopupForm : Form, IPluginPopup
         try
         {
             string userDataFolder = _host.GetWebView2UserDataFolder("claude-chat");
-            var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
-            await _webView.EnsureCoreWebView2Async(env);
+            // ConfigureAwait(true) is intentional — we must resume on the UI
+            // thread to touch _webView afterwards.
+            var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder).ConfigureAwait(true);
+            await _webView.EnsureCoreWebView2Async(env).ConfigureAwait(true);
             _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             _webView.CoreWebView2.Settings.AreDevToolsEnabled = false;
             _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
@@ -511,6 +516,7 @@ sealed class ChatPopupForm : Form, IPluginPopup
         catch (Exception ex)
         {
             Debug.WriteLine($"ChatPopupForm WebView2 init failed: {ex.Message}");
+            try { _context.LogError("ChatPopupForm WebView2 init failed", ex); } catch { }
         }
     }
 
@@ -519,7 +525,13 @@ sealed class ChatPopupForm : Form, IPluginPopup
     private static string FormatTimeBadge(DateTime ts)
     {
         if (ts == default) return "";
-        string display = ts.ToString("h:mm tt", System.Globalization.CultureInfo.CurrentCulture);
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        // Today → time only; any other day → "MMM d, h:mm tt" (e.g. "Apr 14, 3:42 PM").
+        // Keeps today's popup compact while making history-navigation entries
+        // unambiguous when you're browsing older days.
+        string display = ts.Date == DateTime.Today
+            ? ts.ToString("h:mm tt", culture)
+            : ts.ToString("MMM d, h:mm tt", culture);
         string tooltip = ts.ToString("yyyy-MM-dd HH:mm:ss");
         return $" <span class=\"timestamp\" title=\"{tooltip}\">\u00B7 {display}</span>";
     }
@@ -558,19 +570,32 @@ sealed class ChatPopupForm : Form, IPluginPopup
         _lastMessage = message;
         _lastType = type;
         ApplyTypeColors(type);
-        Text = title;
-        _titleLabel.Text = title;
+
+        // Heading shows the working folder when we have one (e.g. "DevToy")
+        // instead of the generic hook title ("ProdToy - Done"). Falls back to
+        // the title if there's no cwd.
+        string folder = string.IsNullOrEmpty(cwd) ? "" : Path.GetFileName(cwd.TrimEnd('/', '\\'));
+        string heading = string.IsNullOrEmpty(folder) ? title : folder;
+        Text = heading;
+        _titleLabel.Text = heading;
+
+        // Subtitle: "Session {id} · {date}" — date lives here so it's visible
+        // without hovering for a tooltip. Uses response time when present,
+        // otherwise "today".
+        DateTime subtitleTime = responseTime != default ? responseTime
+            : questionTime != default ? questionTime
+            : DateTime.Now;
+        string dateText = subtitleTime.ToString("MMM d, yyyy", System.Globalization.CultureInfo.CurrentCulture);
 
         string subtitle;
         if (!string.IsNullOrEmpty(sessionId))
         {
             string shortId = sessionId.Length > 8 ? sessionId[..8] : sessionId;
-            string folder = string.IsNullOrEmpty(cwd) ? "" : Path.GetFileName(cwd.TrimEnd('/', '\\'));
-            subtitle = string.IsNullOrEmpty(folder) ? $"Session {shortId}" : $"Session {shortId} · {folder}";
+            subtitle = $"Session {shortId} \u00B7 {dateText}";
         }
         else
         {
-            subtitle = "Claude notification";
+            subtitle = $"Claude notification \u00B7 {dateText}";
         }
         _subtitleLabel.Text = subtitle;
 

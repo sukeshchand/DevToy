@@ -159,8 +159,13 @@ class PopupAppContext : ApplicationContext
             _appIcon = Themes.CreateAppIcon(theme.Primary);
             _trayIcon.Icon = _appIcon;
 
-            // Apply to popup
+            // Apply to host forms
             _popupForm.ApplyTheme(theme);
+            _dashboardForm.ApplyTheme(theme);
+
+            // Broadcast to plugins (ChatPopupForm and any other IPluginPopup
+            // instances subscribe to IPluginHost.ThemeChanged).
+            _pluginHost?.RaiseThemeChanged(theme);
         };
 
         _settingsForm.GlobalFontChanged += fontFamily =>

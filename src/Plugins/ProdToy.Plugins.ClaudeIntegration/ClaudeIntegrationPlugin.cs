@@ -306,6 +306,19 @@ public class ClaudeIntegrationPlugin : IPlugin
         int y = pad;
         int contentWidth = 700;
 
+        // Local helper: thin horizontal separator between sections.
+        int AddSeparator(int yPos)
+        {
+            var sep = new Panel
+            {
+                BackColor = theme.Border,
+                Size = new Size(contentWidth - pad, 1),
+                Location = new Point(pad, yPos + 6),
+            };
+            panel.Controls.Add(sep);
+            return yPos + 18;
+        }
+
         // --- CLAUDE INSTALLATIONS section ---
         var installsLabel = new Label
         {
@@ -357,6 +370,8 @@ public class ClaudeIntegrationPlugin : IPlugin
         };
         panel.Controls.Add(rescanButton);
         y += 60;
+
+        y = AddSeparator(y);
 
         // --- HOOKS AND NOTIFICATIONS section ---
         var hooksNotifLabel = new Label
@@ -526,6 +541,8 @@ public class ClaudeIntegrationPlugin : IPlugin
         };
         panel.Controls.Add(historyCheck);
         y += 34;
+
+        y = AddSeparator(y);
 
         // --- STATUS LINE section ---
         var slSectionLabel = new Label

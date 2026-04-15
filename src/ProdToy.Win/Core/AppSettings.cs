@@ -7,7 +7,7 @@ namespace ProdToy;
 record AppSettingsData
 {
     [JsonPropertyName("theme")]
-    public string Theme { get; init; } = "Amber";
+    public string Theme { get; init; } = "Warm Gray";
 
     [JsonPropertyName("globalFont")]
     public string GlobalFont { get; init; } = "Segoe UI";
