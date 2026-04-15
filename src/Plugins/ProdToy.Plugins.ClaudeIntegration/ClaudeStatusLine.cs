@@ -46,6 +46,57 @@ static class ClaudeStatusLine
     }
 
     /// <summary>
+    /// Set <c>statusLine.refreshInterval</c> on every install so Claude CLI
+    /// polls the PS1 on a timer in addition to event-driven ticks. Used while
+    /// the settings panel is open so toggling <c>SlEnabled</c> / item visibility
+    /// takes effect within a second instead of waiting for the next assistant
+    /// message. Cleared by <see cref="ClearRefreshInterval"/> on panel close.
+    /// </summary>
+    public static void SetRefreshInterval(IEnumerable<ClaudeInstall> installs, int intervalMs)
+    {
+        foreach (var install in installs)
+            UpdateRefreshInterval(install.SettingsFile, intervalMs);
+    }
+
+    /// <summary>
+    /// Remove <c>statusLine.refreshInterval</c> so Claude CLI reverts to
+    /// event-driven rendering only.
+    /// </summary>
+    public static void ClearRefreshInterval(IEnumerable<ClaudeInstall> installs)
+    {
+        foreach (var install in installs)
+            UpdateRefreshInterval(install.SettingsFile, null);
+    }
+
+    private static void UpdateRefreshInterval(string settingsPath, int? intervalMs)
+    {
+        try
+        {
+            if (!File.Exists(settingsPath)) return;
+            string json = File.ReadAllText(settingsPath);
+            var root = JsonNode.Parse(json);
+            if (root is not JsonObject obj || obj["statusLine"] is not JsonObject sl) return;
+
+            // Only touch the entry if it's ours.
+            string? cmd = sl["command"]?.GetValue<string>();
+            if (cmd == null || !cmd.Contains("context-bar.ps1", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (intervalMs.HasValue)
+                sl["refreshInterval"] = intervalMs.Value;
+            else
+                sl.Remove("refreshInterval");
+
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            File.WriteAllText(settingsPath, root.ToJsonString(options), Encoding.UTF8);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to update refreshInterval in {settingsPath}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Remove the <c>statusLine</c> entry from every install's <c>settings.json</c>.
     /// Leaves the PS1 script and config file in place under the plugin data dir.
     /// </summary>

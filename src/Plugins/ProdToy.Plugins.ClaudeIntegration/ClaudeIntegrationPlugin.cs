@@ -648,6 +648,39 @@ public class ClaudeIntegrationPlugin : IPlugin
             panel.Controls.Add(cb);
         }
 
+        // While the settings panel is live, set statusLine.refreshInterval so
+        // Claude CLI polls the PS1 ~every second. This makes SlEnabled toggles
+        // and item-visibility changes feel instant. Cleared on panel teardown
+        // to avoid steady-state polling.
+        panel.HandleCreated += (_, _) =>
+        {
+            try
+            {
+                var s = _context.LoadSettings<ClaudePluginSettings>();
+                var installs = s.ClaudeConfigDirs
+                    .Where(Directory.Exists)
+                    .Select(d => new ClaudeInstall(d))
+                    .ToList();
+                if (installs.Count > 0)
+                    ClaudeStatusLine.SetRefreshInterval(installs, 1000);
+            }
+            catch (Exception ex) { _context.LogError("SetRefreshInterval failed", ex); }
+        };
+        panel.HandleDestroyed += (_, _) =>
+        {
+            try
+            {
+                var s = _context.LoadSettings<ClaudePluginSettings>();
+                var installs = s.ClaudeConfigDirs
+                    .Where(Directory.Exists)
+                    .Select(d => new ClaudeInstall(d))
+                    .ToList();
+                if (installs.Count > 0)
+                    ClaudeStatusLine.ClearRefreshInterval(installs);
+            }
+            catch (Exception ex) { _context.LogError("ClearRefreshInterval failed", ex); }
+        };
+
         return panel;
     }
 
