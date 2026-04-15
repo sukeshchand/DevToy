@@ -18,6 +18,16 @@ public class ScreenshotPlugin : IPlugin
     internal static PluginTheme GetTheme() => _host?.CurrentTheme ?? new PluginTheme(
         "Default", default, default, default, default, default, default, default, default, default, default, default, default);
 
+    public void Install(IPluginContext context)
+    {
+        // No external-system state to install.
+    }
+
+    public void Uninstall(IPluginContext context)
+    {
+        // No external-system state to remove.
+    }
+
     public void Initialize(IPluginContext context)
     {
         _context = context;

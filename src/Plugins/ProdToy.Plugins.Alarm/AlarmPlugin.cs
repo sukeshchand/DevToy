@@ -12,6 +12,16 @@ public class AlarmPlugin : IPlugin
     private AlarmForm? _alarmForm;
     private AlarmHistoryForm? _alarmHistoryForm;
 
+    public void Install(IPluginContext context)
+    {
+        // No external-system state to install.
+    }
+
+    public void Uninstall(IPluginContext context)
+    {
+        // No external-system state to remove.
+    }
+
     public void Initialize(IPluginContext context)
     {
         _context = context;

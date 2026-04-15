@@ -1,23 +1,87 @@
+# ProdToy Claude Code hook script.
+#
+# Reads the event JSON from stdin, checks the plugin's runtime settings, and
+# dispatches a notify envelope to the running ProdToy host via the named pipe.
+#
+# Gate order (any fail → exit 0 without doing anything):
+#   1. Plugin settings file exists and is readable.
+#   2. HostRunning is true AND the named pipe is responding.
+#   3. NotificationsEnabled is true.
+#   4. The per-event hook flag (HookStopEnabled, HookNotificationEnabled,
+#      HookUserPromptEnabled) is true.
+
 [Console]::InputEncoding = [System.Text.Encoding]::UTF8
 $inputJson = [Console]::In.ReadToEnd()
 
+$exePath      = "{{EXE_PATH}}"
+$settingsPath = "{{SETTINGS_PATH}}"
+$pipeName     = "{{PIPE_NAME}}"
+
+# --- Read plugin settings ---
+$settings = $null
+if (Test-Path -LiteralPath $settingsPath) {
+    try { $settings = Get-Content -Raw -LiteralPath $settingsPath | ConvertFrom-Json } catch { }
+}
+if ($null -eq $settings) { exit 0 }
+
+function Get-SettingBool($obj, $name, $default) {
+    if ($null -eq $obj) { return $default }
+    $prop = $obj.PSObject.Properties[$name]
+    if ($null -eq $prop) { return $default }
+    return [bool]$prop.Value
+}
+
+$notificationsEnabled    = Get-SettingBool $settings "notificationsEnabled" $true
+$hookStopEnabled         = Get-SettingBool $settings "hookStopEnabled" $true
+$hookNotificationEnabled = Get-SettingBool $settings "hookNotificationEnabled" $false
+$hookUserPromptEnabled   = Get-SettingBool $settings "hookUserPromptEnabled" $true
+$hostRunningFlag         = Get-SettingBool $settings "hostRunning" $false
+
+if (-not $notificationsEnabled) { exit 0 }
+
+# --- Host-running check: flag + pipe probe ---
+function Test-HostRunning() {
+    try {
+        $pipe = New-Object System.IO.Pipes.NamedPipeClientStream('.', $pipeName, [System.IO.Pipes.PipeDirection]::Out)
+        try {
+            $pipe.Connect(150)
+            return $pipe.IsConnected
+        } finally {
+            $pipe.Dispose()
+        }
+    } catch {
+        return $false
+    }
+}
+
+if (-not $hostRunningFlag) {
+    # Flag says off → trust it (fast path).
+    exit 0
+}
+if (-not (Test-HostRunning)) {
+    # Flag says on but pipe is dead (crash or not-yet-reachable). Bail quietly.
+    exit 0
+}
+
+# --- Parse the Claude event ---
 $title     = "ProdToy"
 $message   = "Task finished."
 $type      = "success"
 $sessionId = ""
 $cwd       = ""
-
-$exePath = "{{EXE_PATH}}"
+$eventName = ""
 
 if ($inputJson) {
     try {
         $payload = $inputJson | ConvertFrom-Json
+        $eventName = [string]$payload.hook_event_name
 
         if ($payload.session_id) { $sessionId = $payload.session_id }
         if ($payload.cwd)        { $cwd = $payload.cwd }
 
-        if ($payload.hook_event_name -eq "UserPromptSubmit") {
-            # Save question via the plugin's claude.save-question command.
+        if ($eventName -eq "UserPromptSubmit") {
+            if (-not $hookUserPromptEnabled) { exit 0 }
+
             if ($payload.prompt) {
                 $qPayload = @{
                     question  = [string]$payload.prompt
@@ -36,12 +100,14 @@ if ($inputJson) {
             }
             exit 0
         }
-        elseif ($payload.hook_event_name -eq "Notification") {
+        elseif ($eventName -eq "Notification") {
+            if (-not $hookNotificationEnabled) { exit 0 }
             if ($payload.title)   { $title = $payload.title }
             if ($payload.message) { $message = $payload.message }
             $type = "info"
         }
-        elseif ($payload.hook_event_name -eq "Stop") {
+        elseif ($eventName -eq "Stop") {
+            if (-not $hookStopEnabled) { exit 0 }
             $title = "ProdToy - Done"
             if ($payload.last_assistant_message) {
                 $message = $payload.last_assistant_message
@@ -54,7 +120,7 @@ if ($inputJson) {
     catch { }
 }
 
-# Send notify envelope via --payload-file to avoid command-line length limits.
+# --- Send notify envelope ---
 $notifyPayload = @{
     title     = [string]$title
     message   = [string]$message

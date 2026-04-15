@@ -26,12 +26,25 @@ record ClaudePluginSettings
     // Auto-title
     [JsonPropertyName("autoTitleToFolder")] public bool AutoTitleToFolder { get; init; } = false;
 
-    // Chat history (plugin-owned after Phase 3)
+    // Chat history (plugin-owned)
     [JsonPropertyName("historyEnabled")] public bool HistoryEnabled { get; init; } = true;
 
-    // One-shot flag: true once the plugin has copied legacy host day files
-    // from ~/.prod-toy/history/claude/chats/ into its own data dir.
-    [JsonPropertyName("historyMigratedFromHost")] public bool HistoryMigratedFromHost { get; init; } = false;
+    /// <summary>
+    /// Claude config directories the plugin has registered hooks/statusLine into.
+    /// Populated by <see cref="ClaudeInstallDiscovery.Scan"/> on first install and
+    /// whenever the user clicks "Rescan" in the settings panel. Each entry is an
+    /// absolute path like "C:\\Users\\sukesh.chand\\.claude".
+    /// </summary>
+    [JsonPropertyName("claudeConfigDirs")] public List<string> ClaudeConfigDirs { get; init; } = new();
+
+    /// <summary>
+    /// True when the host process is currently running. Written to settings.json
+    /// by the host on start/exit; read by Show-ProdToy.ps1 and context-bar.ps1
+    /// as a gate — if the host is off, hooks exit quietly without pinging a dead
+    /// pipe. Resets to false on clean exit; on a crash it will be stale (true),
+    /// in which case the PS1 scripts fall back to a named-pipe probe.
+    /// </summary>
+    [JsonPropertyName("hostRunning")] public bool HostRunning { get; init; } = false;
 
     // Notification prefs (Phase 8 — migrated from host AppSettings). These are
     // Claude-specific: only the ChatPopupForm reads them.

@@ -298,32 +298,4 @@ sealed class ChatHistory
     }
 
     public void Invalidate() { lock (_lock) { _cachedIndex = null; } }
-
-    /// <summary>One-time migration: copy day files from the host's legacy
-    /// location (~/.prod-toy/history/claude/chats/) into the plugin's data dir.
-    /// Leaves originals in place so the old host can still read them during
-    /// the parallel-run phase. Safe to call repeatedly — skips files that
-    /// already exist in the plugin dir.</summary>
-    public int MigrateFromLegacy(string legacyDir)
-    {
-        if (!Directory.Exists(legacyDir)) return 0;
-        Directory.CreateDirectory(_historyDir);
-        int copied = 0;
-        foreach (var src in Directory.GetFiles(legacyDir, "*.json"))
-        {
-            try
-            {
-                var dst = Path.Combine(_historyDir, Path.GetFileName(src));
-                if (File.Exists(dst)) continue;
-                File.Copy(src, dst, overwrite: false);
-                copied++;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Migration copy failed for {src}: {ex.Message}");
-            }
-        }
-        if (copied > 0) Invalidate();
-        return copied;
-    }
 }
