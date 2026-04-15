@@ -213,6 +213,26 @@ public class ClaudeIntegrationPlugin : IPlugin
         // but Claude would otherwise keep showing its cached empty output).
         BumpStatusLineNow();
 
+        // Pre-create the chat popup and kick off WebView2 initialization NOW,
+        // while Start() is running on the clean UI-thread call stack from
+        // PluginManager.StartAll() in the host ctor. Deferring popup creation
+        // until the first pipe notification arrives via Control.Invoke
+        // reliably trips WebView2's RPC_E_CHANGED_MODE COM-apartment race on
+        // first init — matching the user-observed "works after opening from
+        // dashboard first, fails if the first trigger is a hook" symptom.
+        try
+        {
+            _context.Host.InvokeOnUI(() =>
+            {
+                EnsureChatPopup();
+                _chatPopup?.Prewarm();
+            });
+        }
+        catch (Exception ex)
+        {
+            _context.LogError("Chat popup prewarm failed", ex);
+        }
+
         _context.Log("Claude integration started");
     }
 

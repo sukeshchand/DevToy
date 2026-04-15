@@ -61,6 +61,7 @@ sealed class ChatPopupForm : Form, IPluginPopup
 
     private bool _webViewReady;
     private bool _webViewFailed;
+    private bool _webViewInitStarted;
     private string? _pendingHtml;
 
     /// <summary>
@@ -515,8 +516,28 @@ sealed class ChatPopupForm : Form, IPluginPopup
         releaseTimer.Start();
     }
 
+    /// <summary>
+    /// Force WebView2 environment creation on the current (UI) thread without
+    /// showing the form. Called from <see cref="ClaudeIntegrationPlugin.Start"/>
+    /// so the environment is built on the clean post-Application.Run call stack
+    /// rather than deferred until the first pipe notification, which arrives
+    /// nested inside a cross-thread Control.Invoke and reliably trips WebView2's
+    /// RPC_E_CHANGED_MODE COM-apartment race on first init.
+    /// </summary>
+    public void Prewarm()
+    {
+        if (_webViewReady || _webViewFailed || _webViewInitStarted) return;
+        // Touching Handle forces HWND creation for the form and recursively for
+        // child controls (including the WebView2), which is what WebView2 needs
+        // before EnsureCoreWebView2Async can proceed. The form stays invisible.
+        _ = Handle;
+        InitializeWebView2();
+    }
+
     private async void InitializeWebView2()
     {
+        if (_webViewInitStarted || _webViewReady || _webViewFailed) return;
+        _webViewInitStarted = true;
         try
         {
             // With CreationProperties.UserDataFolder set on the WebView2
@@ -544,6 +565,7 @@ sealed class ChatPopupForm : Form, IPluginPopup
             Debug.WriteLine($"ChatPopupForm WebView2 init failed: {ex.Message}");
             try { _context.LogError("ChatPopupForm WebView2 init failed", ex); } catch { }
             _webViewFailed = true;
+            _webViewInitStarted = false;
             try { WebViewInitFailed?.Invoke(); } catch { }
         }
     }
