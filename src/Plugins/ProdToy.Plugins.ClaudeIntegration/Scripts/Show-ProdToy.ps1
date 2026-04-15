@@ -83,19 +83,20 @@ if ($inputJson) {
             if (-not $hookUserPromptEnabled) { exit 0 }
 
             if ($payload.prompt) {
+                # Write only the inner payload. Program.cs's SendEnvelopeToPipe
+                # wraps it in the {command, payload} envelope. Pre-wrapping here
+                # would produce a doubly-wrapped envelope that PipeRouter strips
+                # once, leaving OnSaveQuestionCommand with the outer shape
+                # ({command, payload}) instead of the {question, sessionId, cwd}
+                # shape it deserializes — so SaveQuestion would never fire.
                 $qPayload = @{
                     question  = [string]$payload.prompt
                     sessionId = $sessionId
                     cwd       = $cwd
                 } | ConvertTo-Json -Compress
 
-                $qEnvelope = @{
-                    command = "claude.save-question"
-                    payload = $qPayload
-                } | ConvertTo-Json -Compress
-
                 $qFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "prodtoy_save_question.json")
-                [System.IO.File]::WriteAllText($qFile, $qEnvelope, [System.Text.Encoding]::UTF8)
+                [System.IO.File]::WriteAllText($qFile, $qPayload, [System.Text.Encoding]::UTF8)
                 Start-Process -FilePath $exePath -ArgumentList @("--command", "claude.save-question", "--payload-file", "`"$qFile`"") -WindowStyle Hidden
             }
             exit 0
