@@ -15,6 +15,7 @@ public class ClaudeIntegrationPlugin : IPlugin
     private IDisposable? _popupReg;
     private ChatHistory _chatHistory = null!;
     private ChatPopupForm? _chatPopup;
+    private TelegramNotifier _telegram = null!;
 
     public void Install(IPluginContext context)
     {
@@ -89,6 +90,8 @@ public class ClaudeIntegrationPlugin : IPlugin
             context.DataDirectory,
             () => context.LoadSettings<ClaudePluginSettings>().HistoryEnabled);
 
+        _telegram = new TelegramNotifier(context);
+
         // Phase 2+3: routed pipe handlers. claude.notify → write to plugin
         // history, then show via generic notifications. claude.save-question
         // → plugin-owned SaveQuestion.
@@ -109,6 +112,7 @@ public class ClaudeIntegrationPlugin : IPlugin
             string type = payload.type ?? "info";
             string sessionId = payload.sessionId ?? "";
             string cwd = payload.cwd ?? "";
+            string hookEvent = payload.hookEvent ?? "";
 
             // Phase 3: write the response into plugin-owned history.
             _chatHistory.SaveResponse(title, message, type, sessionId, cwd);
@@ -118,6 +122,11 @@ public class ClaudeIntegrationPlugin : IPlugin
             // reads ClaudePluginSettings directly. No host-side facility.
             EnsureChatPopup();
             _chatPopup?.ShowPopup(title, message, type, sessionId, cwd);
+
+            // Fan out to Telegram (fire-and-forget). TelegramNotifier handles
+            // its own enable/gate/credential checks and never throws into the
+            // UI thread — all errors land in plugins.log.
+            _ = _telegram.SendAsync(title, message, hookEvent);
         }
         catch (Exception ex)
         {
@@ -150,7 +159,7 @@ public class ClaudeIntegrationPlugin : IPlugin
         }
     }
 
-    private sealed record NotifyPayload(string? title, string? message, string? type, string? sessionId, string? cwd);
+    private sealed record NotifyPayload(string? title, string? message, string? type, string? sessionId, string? cwd, string? hookEvent);
     private sealed record SaveQuestionPayload(string? question, string? sessionId, string? cwd);
 
     public void Start()
@@ -159,17 +168,20 @@ public class ClaudeIntegrationPlugin : IPlugin
         // settings.json or hook scripts on disk (that's Install()'s job, done
         // once at plugin install time).
         //
-        // Safety net: if the PS1 scripts were deleted between launches
-        // (manual cleanup, disk cleanup, etc.) re-extract them so Claude CLI
-        // still finds them when it fires a hook. Cheap — just a file write.
+        // BUT the PS1 hook script is shipped as an embedded resource and
+        // evolves across plugin versions (e.g. v1.0.322 added the hookEvent
+        // field to the envelope). A pre-upgrade PS1 left on disk will send
+        // a stale envelope that silently drops the event routing. So on every
+        // Start we unconditionally re-extract from the resource — cheap
+        // (single file write), self-healing across upgrades, and no user
+        // action required.
         try
         {
-            if (!File.Exists(ClaudePaths.ShowProdToyScript))
-                EnsureHookScriptFromResource(_context);
+            EnsureHookScriptFromResource(_context);
         }
         catch (Exception ex)
         {
-            _context.LogError("Start: ShowProdToy script verify failed", ex);
+            _context.LogError("Start: ShowProdToy script extraction failed", ex);
         }
 
         // Mark host as running so the PS1 scripts know they can dispatch.
@@ -519,6 +531,281 @@ public class ClaudeIntegrationPlugin : IPlugin
             });
 
         y += 10;
+
+        y = AddSeparator(y);
+
+        // --- TELEGRAM section ---
+        // Outbound Telegram bot channel. Runs alongside popup/balloon — this
+        // is orthogonal to NotificationMode, gated by its own TelegramEnabled
+        // flag so a user can disable Telegram without losing the local popup.
+        var telegramLabel = new Label
+        {
+            Text = "TELEGRAM",
+            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+            ForeColor = theme.Primary,
+            AutoSize = true,
+            Location = new Point(pad, y),
+            BackColor = Color.Transparent,
+        };
+        panel.Controls.Add(telegramLabel);
+        y += 26;
+
+        var tgSubControls = new List<Control>();
+
+        var tgEnabledCheck = new CheckBox
+        {
+            Text = "Send notifications to Telegram",
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = theme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = settings.TelegramEnabled,
+            AutoSize = true,
+            Location = new Point(pad + 8, y),
+            Cursor = Cursors.Hand,
+        };
+        panel.Controls.Add(tgEnabledCheck);
+        y += 30;
+
+        int labelX = pad + 8;
+        int fieldX = pad + 110;
+        int fieldW = contentWidth - fieldX - pad;
+
+        // Bot token (masked)
+        var tokenLabel = new Label
+        {
+            Text = "Bot token:",
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = theme.TextPrimary,
+            AutoSize = true,
+            Location = new Point(labelX, y + 4),
+            BackColor = Color.Transparent,
+        };
+        panel.Controls.Add(tokenLabel);
+        tgSubControls.Add(tokenLabel);
+
+        var tokenBox = new TextBox
+        {
+            Font = new Font("Segoe UI", 9f),
+            BackColor = theme.BgHeader,
+            ForeColor = theme.TextPrimary,
+            BorderStyle = BorderStyle.FixedSingle,
+            UseSystemPasswordChar = true,
+            Size = new Size(fieldW, 24),
+            Location = new Point(fieldX, y),
+            Text = settings.TelegramBotToken,
+        };
+        tokenBox.TextChanged += (_, _) =>
+        {
+            var s = _context.LoadSettings<ClaudePluginSettings>();
+            _context.SaveSettings(s with { TelegramBotToken = tokenBox.Text.Trim() });
+        };
+        panel.Controls.Add(tokenBox);
+        tgSubControls.Add(tokenBox);
+        y += 30;
+
+        // Chat ID
+        var chatLabel = new Label
+        {
+            Text = "Chat ID:",
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = theme.TextPrimary,
+            AutoSize = true,
+            Location = new Point(labelX, y + 4),
+            BackColor = Color.Transparent,
+        };
+        panel.Controls.Add(chatLabel);
+        tgSubControls.Add(chatLabel);
+
+        var chatBox = new TextBox
+        {
+            Font = new Font("Segoe UI", 9f),
+            BackColor = theme.BgHeader,
+            ForeColor = theme.TextPrimary,
+            BorderStyle = BorderStyle.FixedSingle,
+            Size = new Size(200, 24),
+            Location = new Point(fieldX, y),
+            Text = settings.TelegramChatId,
+        };
+        chatBox.TextChanged += (_, _) =>
+        {
+            var s = _context.LoadSettings<ClaudePluginSettings>();
+            _context.SaveSettings(s with { TelegramChatId = chatBox.Text.Trim() });
+        };
+        panel.Controls.Add(chatBox);
+        tgSubControls.Add(chatBox);
+        y += 30;
+
+        // Prefix
+        var prefixLabel = new Label
+        {
+            Text = "Prefix:",
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = theme.TextPrimary,
+            AutoSize = true,
+            Location = new Point(labelX, y + 4),
+            BackColor = Color.Transparent,
+        };
+        panel.Controls.Add(prefixLabel);
+        tgSubControls.Add(prefixLabel);
+
+        var prefixBox = new TextBox
+        {
+            Font = new Font("Segoe UI", 9f),
+            BackColor = theme.BgHeader,
+            ForeColor = theme.TextPrimary,
+            BorderStyle = BorderStyle.FixedSingle,
+            Size = new Size(200, 24),
+            Location = new Point(fieldX, y),
+            Text = settings.TelegramPrefix,
+        };
+        prefixBox.TextChanged += (_, _) =>
+        {
+            var s = _context.LoadSettings<ClaudePluginSettings>();
+            _context.SaveSettings(s with { TelegramPrefix = prefixBox.Text });
+        };
+        panel.Controls.Add(prefixBox);
+        tgSubControls.Add(prefixBox);
+        y += 30;
+
+        // Max chars
+        var maxLabel = new Label
+        {
+            Text = "Max chars:",
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = theme.TextPrimary,
+            AutoSize = true,
+            Location = new Point(labelX, y + 4),
+            BackColor = Color.Transparent,
+        };
+        panel.Controls.Add(maxLabel);
+        tgSubControls.Add(maxLabel);
+
+        var maxBox = new NumericUpDown
+        {
+            Font = new Font("Segoe UI", 9f),
+            BackColor = theme.BgHeader,
+            ForeColor = theme.TextPrimary,
+            BorderStyle = BorderStyle.FixedSingle,
+            Minimum = 50,
+            Maximum = 4000,
+            Increment = 50,
+            Value = Math.Clamp(settings.TelegramMaxChars, 50, 4000),
+            Size = new Size(80, 24),
+            Location = new Point(fieldX, y),
+        };
+        maxBox.ValueChanged += (_, _) =>
+        {
+            var s = _context.LoadSettings<ClaudePluginSettings>();
+            _context.SaveSettings(s with { TelegramMaxChars = (int)maxBox.Value });
+        };
+        panel.Controls.Add(maxBox);
+        tgSubControls.Add(maxBox);
+        y += 32;
+
+        // Per-event toggles
+        var tgOnStopCheck = new CheckBox
+        {
+            Text = "On Stop",
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = theme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = settings.TelegramOnStop,
+            AutoSize = true,
+            Location = new Point(pad + 8, y),
+            Cursor = Cursors.Hand,
+        };
+        tgOnStopCheck.CheckedChanged += (_, _) =>
+        {
+            var s = _context.LoadSettings<ClaudePluginSettings>();
+            _context.SaveSettings(s with { TelegramOnStop = tgOnStopCheck.Checked });
+        };
+        panel.Controls.Add(tgOnStopCheck);
+        tgSubControls.Add(tgOnStopCheck);
+
+        var tgOnNotifCheck = new CheckBox
+        {
+            Text = "On Notification",
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = theme.TextPrimary,
+            BackColor = Color.Transparent,
+            Checked = settings.TelegramOnNotification,
+            AutoSize = true,
+            Location = new Point(pad + 120, y),
+            Cursor = Cursors.Hand,
+        };
+        tgOnNotifCheck.CheckedChanged += (_, _) =>
+        {
+            var s = _context.LoadSettings<ClaudePluginSettings>();
+            _context.SaveSettings(s with { TelegramOnNotification = tgOnNotifCheck.Checked });
+        };
+        panel.Controls.Add(tgOnNotifCheck);
+        tgSubControls.Add(tgOnNotifCheck);
+        y += 32;
+
+        // Test button + status
+        var testBtn = new Button
+        {
+            Text = "Send test message",
+            Font = new Font("Segoe UI", 9f),
+            Size = new Size(150, 28),
+            Location = new Point(pad + 8, y),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = theme.PrimaryDim,
+            ForeColor = theme.TextPrimary,
+            Cursor = Cursors.Hand,
+        };
+        testBtn.FlatAppearance.BorderSize = 0;
+        panel.Controls.Add(testBtn);
+        tgSubControls.Add(testBtn);
+
+        var testStatus = new Label
+        {
+            Text = "",
+            Font = new Font("Segoe UI", 8.5f),
+            ForeColor = theme.TextSecondary,
+            AutoSize = true,
+            Location = new Point(pad + 168, y + 7),
+            BackColor = Color.Transparent,
+        };
+        panel.Controls.Add(testStatus);
+
+        testBtn.Click += async (_, _) =>
+        {
+            testBtn.Enabled = false;
+            testStatus.ForeColor = theme.TextSecondary;
+            testStatus.Text = "Sending...";
+            try
+            {
+                var (ok, detail) = await _telegram.TestSendAsync();
+                testStatus.ForeColor = ok ? theme.SuccessColor : theme.ErrorColor;
+                testStatus.Text = ok ? "Sent!" : $"Failed: {detail}";
+            }
+            catch (Exception ex)
+            {
+                testStatus.ForeColor = theme.ErrorColor;
+                testStatus.Text = $"Error: {ex.Message}";
+            }
+            finally
+            {
+                testBtn.Enabled = true;
+            }
+        };
+
+        // Sub-control enable state follows the master checkbox
+        foreach (var ctrl in tgSubControls)
+            ctrl.Enabled = settings.TelegramEnabled;
+
+        tgEnabledCheck.CheckedChanged += (_, _) =>
+        {
+            var s = _context.LoadSettings<ClaudePluginSettings>();
+            _context.SaveSettings(s with { TelegramEnabled = tgEnabledCheck.Checked });
+            foreach (var ctrl in tgSubControls)
+                ctrl.Enabled = tgEnabledCheck.Checked;
+        };
+
+        y += 36;
+
+        y = AddSeparator(y);
 
         // --- CHATS section ---
         // Phase 5: HistoryEnabled is plugin-owned. ChatHistory reads this

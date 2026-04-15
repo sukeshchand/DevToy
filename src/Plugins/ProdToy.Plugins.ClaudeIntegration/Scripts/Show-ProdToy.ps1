@@ -127,6 +127,7 @@ $notifyPayload = @{
     type      = [string]$type
     sessionId = $sessionId
     cwd       = $cwd
+    hookEvent = [string]$eventName
 } | ConvertTo-Json -Compress
 
 $nFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "prodtoy_notify.json")
