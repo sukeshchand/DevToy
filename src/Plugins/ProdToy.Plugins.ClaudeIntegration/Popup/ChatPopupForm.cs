@@ -706,6 +706,31 @@ sealed class ChatPopupForm : Form, IPluginPopup
 
         _snoozeCheckBox.Checked = IsSnoozed;
 
+        // Smart resize: estimate content height from line count and adjust
+        var lineCount = message.Split('\n').Length;
+        int wrappedLines = lineCount;
+        foreach (var line in message.Split('\n'))
+        {
+            if (line.Length > 80)
+                wrappedLines += (line.Length / 80);
+        }
+        int estimatedContentHeight = Math.Max(180, wrappedLines * 28 + 60);
+        var workingArea = Screen.FromControl(this).WorkingArea;
+        int maxHeight = (int)(workingArea.Height * 0.9);
+        int newClientW = Math.Max(ClientSize.Width, 600);
+        int newClientH = Math.Min(maxHeight, HeaderHeight + InfoBarHeight + estimatedContentHeight + FooterHeight);
+        ClientSize = new Size(newClientW, newClientH);
+
+        // Keep window within screen bounds
+        int curLeft = Left, curTop = Top;
+        if (curLeft < workingArea.Left || curTop < workingArea.Top ||
+            curLeft + Width > workingArea.Right || curTop + Height > workingArea.Bottom)
+        {
+            Location = new Point(
+                Math.Clamp(curLeft, workingArea.Left, Math.Max(workingArea.Left, workingArea.Right - Width)),
+                Math.Clamp(curTop, workingArea.Top, Math.Max(workingArea.Top, workingArea.Bottom - Height)));
+        }
+
         if (_webViewReady)
             _webView.NavigateToString(htmlContent);
         else
