@@ -49,13 +49,20 @@ class CanvasContainer : Panel
         CenterCanvas();
     }
 
-    /// <summary>Sync the canvas control size from the session's CanvasSize and recenter.</summary>
+    /// <summary>Sync the canvas control size from the session's CanvasSize and recenter.
+    /// If the canvas is now larger than the viewport, auto zoom-to-fit so all edges
+    /// (and their resize handles) remain visible.</summary>
     public void SyncCanvasSize()
     {
         if (_canvas.Session != null)
         {
-            // SetLogicalSize internally applies the current zoom to the display size.
             _canvas.SetLogicalSize(_canvas.Session.CanvasSize.Width, _canvas.Session.CanvasSize.Height);
+
+            // Auto fit when the canvas overflows the container viewport
+            if (_canvas.Width > ClientSize.Width || _canvas.Height > ClientSize.Height)
+            {
+                _canvas.FitToContainer(ClientSize);
+            }
         }
         CenterCanvas();
     }
@@ -122,12 +129,8 @@ class CanvasContainer : Panel
         using var borderPen = new Pen(Color.FromArgb(100, 128, 128, 128), 1f);
         g.DrawRectangle(borderPen, cr.X - 1, cr.Y - 1, cr.Width + 1, cr.Height + 1);
 
-        // Draw resize handles (on the actual canvas, not the preview) — hide during crop
-        // and hide when zoomed (handle drag math assumes 1:1).
-        if (!_isResizingCanvas && !_canvas.IsCropActive && Math.Abs(_canvas.Zoom - 1.0f) < 0.0001f)
-        {
-            DrawResizeHandles(g, cr);
-        }
+        // Resize handles are drawn by the canvas itself (at the end of its
+        // OnPaint) so they are never occluded by the child control's painting.
 
         // Draw preview frame during drag
         if (_isResizingCanvas)
@@ -190,8 +193,6 @@ class CanvasContainer : Panel
 
     private HandlePosition HitTestHandle(Point pt)
     {
-        // Handles are not interactive while zoomed.
-        if (Math.Abs(_canvas.Zoom - 1.0f) > 0.0001f) return HandlePosition.None;
         var handles = GetHandleRects(_canvas.Bounds);
         for (int i = 0; i < handles.Length; i++)
         {
@@ -217,6 +218,8 @@ class CanvasContainer : Panel
             _resizeStart = e.Location;
             _canvasBoundsAtStart = _canvas.Bounds;
             _previewRect = _canvas.Bounds;
+            _canvas.ShowResizeHandles = false;
+            _canvas.Invalidate();
             Capture = true;
             Invalidate();
             return;
@@ -281,10 +284,12 @@ class CanvasContainer : Panel
             var oldBounds = _canvasBoundsAtStart;
             var newBounds = _previewRect;
 
-            int leftDelta = oldBounds.Left - newBounds.Left;
-            int topDelta = oldBounds.Top - newBounds.Top;
-            int newW = newBounds.Width;
-            int newH = newBounds.Height;
+            // Convert display-pixel deltas to logical coords when zoomed
+            float z = Math.Max(0.01f, _canvas.Zoom);
+            int leftDelta = (int)Math.Round((oldBounds.Left - newBounds.Left) / z);
+            int topDelta = (int)Math.Round((oldBounds.Top - newBounds.Top) / z);
+            int newW = Math.Max(50, (int)Math.Round(newBounds.Width / z));
+            int newH = Math.Max(50, (int)Math.Round(newBounds.Height / z));
 
             if (_canvas.Session != null)
             {
@@ -294,12 +299,12 @@ class CanvasContainer : Panel
                 var newSize = new Size(newW, newH);
                 var newOffset = new Point(oldOffset.X + leftDelta, oldOffset.Y + topDelta);
 
-                // Execute through undo system
                 var action = new CanvasResizeAction(session, oldSize, newSize, oldOffset, newOffset, leftDelta, topDelta);
                 session.UndoRedo.Execute(action);
             }
 
             _canvas.SetLogicalSize(newW, newH);
+            _canvas.ShowResizeHandles = true;
             CenterCanvas();
             return;
         }

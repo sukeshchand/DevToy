@@ -61,6 +61,12 @@ class ScreenshotCanvas : Control
     public float Zoom => _zoom;
     public Size LogicalSize => new(_logicalWidth, _logicalHeight);
 
+    /// <summary>
+    /// When true, the canvas draws resize handles at its edges. Set by
+    /// <see cref="CanvasContainer"/> based on zoom level and crop state.
+    /// </summary>
+    public bool ShowResizeHandles { get; set; } = true;
+
     public event Action? ZoomChanged;
 
     public event Action? CanvasChanged;
@@ -426,6 +432,31 @@ class ScreenshotCanvas : Control
                 using var labelBrush = new SolidBrush(Color.FromArgb(200, 80, 160, 255));
                 g.DrawString(sizeText, font, labelBrush, lx, ly);
             }
+        }
+
+        // --- Canvas resize handles (drawn last, in display coords) ---
+        // Reset any zoom transform so handles are in pixel coords and sit
+        // at the physical edges of this control — never occluded.
+        if (ShowResizeHandles && !IsCropActive)
+        {
+            g.ResetTransform();
+            int hs = 8, hh = hs / 2;
+            float cxH = Width / 2f;
+            float cyH = Height / 2f;
+            var handleRects = new RectangleF[]
+            {
+                new(-hh, -hh, hs, hs),
+                new(cxH - hh, -hh, hs, hs),
+                new(Width - hh, -hh, hs, hs),
+                new(-hh, cyH - hh, hs, hs),
+                new(Width - hh, cyH - hh, hs, hs),
+                new(-hh, Height - hh, hs, hs),
+                new(cxH - hh, Height - hh, hs, hs),
+                new(Width - hh, Height - hh, hs, hs),
+            };
+            using var hBrush = new SolidBrush(Color.FromArgb(200, 80, 160, 255));
+            foreach (var hr in handleRects)
+                g.FillRectangle(hBrush, hr);
         }
     }
 
