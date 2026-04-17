@@ -291,17 +291,31 @@ if ($cfg.version) {
         } catch {}
     }
 
+    # Compare two semver-ish strings; returns -1, 0, 1. Non-parseable -> 0 (treat as equal).
+    function Compare-Version($a, $b) {
+        if (-not $a -or -not $b) { return 0 }
+        try {
+            $va = [version](($a -split '[-+]')[0])
+            $vb = [version](($b -split '[-+]')[0])
+            return $va.CompareTo($vb)
+        } catch { return 0 }
+    }
+
     if ($runningVersion) {
         $verStr = "${C_LABEL}Running: ${C_VALUE}${runningVersion}"
-        if ($installedVersion -and $installedVersion -ne $runningVersion) {
-            $verStr += " ${C_WHITE}(new version v${installedVersion} available)"
-        } elseif ($latestVersion -and $latestVersion -ne $runningVersion) {
-            $verStr += " ${C_WHITE}(new version v${latestVersion} available)"
+        $candidate = ""
+        if ($installedVersion -and (Compare-Version $installedVersion $runningVersion) -gt 0) {
+            $candidate = $installedVersion
+        } elseif ($latestVersion -and (Compare-Version $latestVersion $runningVersion) -gt 0) {
+            $candidate = $latestVersion
+        }
+        if ($candidate) {
+            $verStr += " ${C_WHITE}(new version v${candidate} available)"
         }
         $row2Parts.Add($verStr)
     } elseif ($installedVersion) {
         $verStr = "${C_LABEL}Installed: ${C_VALUE}${installedVersion}"
-        if ($latestVersion -and $latestVersion -ne $installedVersion) {
+        if ($latestVersion -and (Compare-Version $latestVersion $installedVersion) -gt 0) {
             $verStr += " ${C_WHITE}(new version v${latestVersion} available)"
         }
         $row2Parts.Add($verStr)
