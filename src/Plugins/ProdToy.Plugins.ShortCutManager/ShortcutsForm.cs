@@ -3,9 +3,9 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using ProdToy.Sdk;
 
-namespace ProdToy.Plugins.ClaudeIntegration;
+namespace ProdToy.Plugins.ShortCutManager;
 
-class ClaudeShortcutsForm : Form
+class ShortcutsForm : Form
 {
     /// <summary>Sentinel Tag value for the hard-coded "recycle bin" node.</summary>
     private const string RecycleBinTag = "__recycle__";
@@ -24,11 +24,11 @@ class ClaudeShortcutsForm : Form
     /// </summary>
     private string _selectedFolder = "";
 
-    public ClaudeShortcutsForm(PluginTheme theme)
+    public ShortcutsForm(PluginTheme theme)
     {
         _theme = theme;
 
-        Text = "ProdToy — Claude Shortcuts";
+        Text = "ProdToy — Shortcuts";
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = true;
         MinimizeBox = true;
@@ -55,7 +55,7 @@ class ClaudeShortcutsForm : Form
 
         var titleLabel = new Label
         {
-            Text = "Claude Shortcuts",
+            Text = "Shortcuts",
             Font = new Font("Segoe UI Semibold", 16f, FontStyle.Bold),
             ForeColor = theme.TextPrimary,
             AutoSize = true,
@@ -72,7 +72,7 @@ class ClaudeShortcutsForm : Form
 
         var hintLabel = new Label
         {
-            Text = ClaudeShortcutLauncher.TryFindWindowsTerminal(out _)
+            Text = ShortcutLauncher.TryFindWindowsTerminal(out _)
                 ? "Launches in Windows Terminal"
                 : "Windows Terminal not found — plain cmd window will be used",
             Font = new Font("Segoe UI", 9f),
@@ -189,7 +189,7 @@ class ClaudeShortcutsForm : Form
             var menu = new ContextMenuStrip { BackColor = _theme.BgHeader, ForeColor = _theme.TextPrimary };
             var emptyItem = new ToolStripMenuItem("Empty recycle bin…")
             {
-                Enabled = ClaudeShortcutsRecycleBin.Count > 0,
+                Enabled = ShortcutsRecycleBin.Count > 0,
             };
             emptyItem.Click += (_, _) => EmptyRecycleBin();
             menu.Items.Add(emptyItem);
@@ -282,11 +282,11 @@ class ClaudeShortcutsForm : Form
         _listPanel.SuspendLayout();
         _listPanel.Controls.Clear();
 
-        var all = ClaudeShortcutStore.Load();
+        var all = ShortcutStore.Load();
 
         if (IsRecycleBinSelected)
         {
-            var recycled = ClaudeShortcutsRecycleBin.Load()
+            var recycled = ShortcutsRecycleBin.Load()
                 .OrderByDescending(e => e.DeletedAt)
                 .ToList();
 
@@ -311,7 +311,7 @@ class ClaudeShortcutsForm : Form
         }
 
         var filtered = all.Where(s => string.Equals(
-            ClaudeShortcutFolders.Normalize(s.FolderPath),
+            ShortcutFolders.Normalize(s.FolderPath),
             _selectedFolder,
             StringComparison.OrdinalIgnoreCase)).ToList();
 
@@ -331,7 +331,7 @@ class ClaudeShortcutsForm : Form
         {
             foreach (var s in ordered)
             {
-                var row = new ClaudeShortcutRow(s, _theme) { Expanded = s.Id == _expandedId };
+                var row = new ShortcutRow(s, _theme) { Expanded = s.Id == _expandedId };
                 row.RowClicked += id => ToggleExpand(id);
                 row.RowDoubleClicked += id => Edit(id);
                 row.LaunchRequested += id => Launch(id);
@@ -363,23 +363,23 @@ class ClaudeShortcutsForm : Form
 
     private void RebuildTree()
     {
-        var all = ClaudeShortcutStore.Load();
+        var all = ShortcutStore.Load();
         var allFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var s in all)
         {
-            var p = ClaudeShortcutFolders.Normalize(s.FolderPath);
+            var p = ShortcutFolders.Normalize(s.FolderPath);
             if (string.IsNullOrEmpty(p)) continue;
             allFolders.Add(p);
-            for (var parent = ClaudeShortcutFolders.ParentOf(p);
+            for (var parent = ShortcutFolders.ParentOf(p);
                  !string.IsNullOrEmpty(parent);
-                 parent = ClaudeShortcutFolders.ParentOf(parent))
+                 parent = ShortcutFolders.ParentOf(parent))
             {
                 allFolders.Add(parent);
             }
         }
-        foreach (var f in ClaudeShortcutFolders.Load())
-            allFolders.Add(ClaudeShortcutFolders.Normalize(f));
+        foreach (var f in ShortcutFolders.Load())
+            allFolders.Add(ShortcutFolders.Normalize(f));
 
         _folderTree.BeginUpdate();
         try
@@ -423,7 +423,7 @@ class ClaudeShortcutsForm : Form
                 node?.Expand();
             }
 
-            int recycledCount = ClaudeShortcutsRecycleBin.Count;
+            int recycledCount = ShortcutsRecycleBin.Count;
             _recycleBinRow.Suffix = recycledCount > 0 ? $"  ({recycledCount})" : "";
 
             // Selection mapping:
@@ -487,10 +487,10 @@ class ClaudeShortcutsForm : Form
     }
 
     /// <summary>Builds the node label (with folder glyph) and a recursive count of shortcuts.</summary>
-    private static string FormatNodeText(string leafName, string fullPath, List<ClaudeShortcut> all)
+    private static string FormatNodeText(string leafName, string fullPath, List<Shortcut> all)
     {
-        int count = all.Count(s => ClaudeShortcutFolders.IsSelfOrDescendant(
-            ClaudeShortcutFolders.Normalize(s.FolderPath), fullPath));
+        int count = all.Count(s => ShortcutFolders.IsSelfOrDescendant(
+            ShortcutFolders.Normalize(s.FolderPath), fullPath));
         return count > 0 ? $"📁 {leafName}  ({count})" : $"📁 {leafName}";
     }
 
@@ -524,7 +524,7 @@ class ClaudeShortcutsForm : Form
         if (string.IsNullOrEmpty(cleaned)) return;
 
         var full = string.IsNullOrEmpty(parent) ? cleaned : parent + "/" + cleaned;
-        ClaudeShortcutFolders.Add(full);
+        ShortcutFolders.Add(full);
         _selectedFolder = full;
         RebuildTree();
         UpdateNewShortcutButtonState();
@@ -534,7 +534,7 @@ class ClaudeShortcutsForm : Form
     private void RenameFolder(string path)
     {
         if (string.IsNullOrEmpty(path)) return;
-        var parent = ClaudeShortcutFolders.ParentOf(path) ?? "";
+        var parent = ShortcutFolders.ParentOf(path) ?? "";
         var leaf = path.Contains('/') ? path[(path.LastIndexOf('/') + 1)..] : path;
         var newLeaf = TextInputDialog.Prompt(this, _theme, "Rename folder", "New name", leaf);
         if (newLeaf == null) return;
@@ -542,17 +542,17 @@ class ClaudeShortcutsForm : Form
         if (string.IsNullOrEmpty(newLeaf) || string.Equals(newLeaf, leaf, StringComparison.OrdinalIgnoreCase)) return;
         var newPath = string.IsNullOrEmpty(parent) ? newLeaf : parent + "/" + newLeaf;
 
-        var all = ClaudeShortcutStore.Load();
+        var all = ShortcutStore.Load();
         foreach (var s in all.ToList())
         {
-            var normalized = ClaudeShortcutFolders.Normalize(s.FolderPath);
-            if (ClaudeShortcutFolders.IsSelfOrDescendant(normalized, path))
+            var normalized = ShortcutFolders.Normalize(s.FolderPath);
+            if (ShortcutFolders.IsSelfOrDescendant(normalized, path))
             {
-                var nextPath = ClaudeShortcutFolders.RewritePrefix(normalized, path, newPath);
-                ClaudeShortcutStore.Update(s with { FolderPath = nextPath });
+                var nextPath = ShortcutFolders.RewritePrefix(normalized, path, newPath);
+                ShortcutStore.Update(s with { FolderPath = nextPath });
             }
         }
-        ClaudeShortcutFolders.RenamePath(path, newPath);
+        ShortcutFolders.RenamePath(path, newPath);
         _selectedFolder = newPath;
         RebuildTree();
         UpdateNewShortcutButtonState();
@@ -562,10 +562,10 @@ class ClaudeShortcutsForm : Form
     private void DeleteFolder(string path)
     {
         if (string.IsNullOrEmpty(path)) return;
-        var all = ClaudeShortcutStore.Load();
+        var all = ShortcutStore.Load();
 
-        var shortcutsInside = all.Where(s => ClaudeShortcutFolders.IsSelfOrDescendant(
-            ClaudeShortcutFolders.Normalize(s.FolderPath), path)).ToList();
+        var shortcutsInside = all.Where(s => ShortcutFolders.IsSelfOrDescendant(
+            ShortcutFolders.Normalize(s.FolderPath), path)).ToList();
 
         // Union every folder path under (or equal to) the anchor, from both
         // shortcuts and the persisted folder store. We preserve them all so
@@ -573,14 +573,14 @@ class ClaudeShortcutsForm : Form
         var allFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var s in all)
         {
-            var p = ClaudeShortcutFolders.Normalize(s.FolderPath);
+            var p = ShortcutFolders.Normalize(s.FolderPath);
             if (!string.IsNullOrEmpty(p)) allFolders.Add(p);
         }
-        foreach (var f in ClaudeShortcutFolders.Load())
-            allFolders.Add(ClaudeShortcutFolders.Normalize(f));
+        foreach (var f in ShortcutFolders.Load())
+            allFolders.Add(ShortcutFolders.Normalize(f));
         allFolders.Add(path);
         var subfolders = allFolders
-            .Where(p => ClaudeShortcutFolders.IsSelfOrDescendant(p, path))
+            .Where(p => ShortcutFolders.IsSelfOrDescendant(p, path))
             .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -602,7 +602,7 @@ class ClaudeShortcutsForm : Form
             MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
         if (res != DialogResult.Yes) return;
 
-        ClaudeShortcutsRecycleBin.Add(new RecycleBinEntry
+        ShortcutsRecycleBin.Add(new RecycleBinEntry
         {
             FolderPath = path,
             Subfolders = subfolders,
@@ -610,10 +610,10 @@ class ClaudeShortcutsForm : Form
         });
 
         foreach (var s in shortcutsInside)
-            ClaudeShortcutStore.Delete(s.Id);
-        ClaudeShortcutFolders.RemoveRecursive(path);
+            ShortcutStore.Delete(s.Id);
+        ShortcutFolders.RemoveRecursive(path);
 
-        _selectedFolder = ClaudeShortcutFolders.ParentOf(path) ?? "";
+        _selectedFolder = ShortcutFolders.ParentOf(path) ?? "";
         RebuildTree();
         UpdateNewShortcutButtonState();
         RefreshList();
@@ -621,17 +621,17 @@ class ClaudeShortcutsForm : Form
 
     private void RestoreRecycledEntry(string id)
     {
-        var entry = ClaudeShortcutsRecycleBin.Get(id);
+        var entry = ShortcutsRecycleBin.Get(id);
         if (entry == null) return;
 
         foreach (var f in entry.Subfolders)
-            ClaudeShortcutFolders.Add(f);
+            ShortcutFolders.Add(f);
         if (!string.IsNullOrEmpty(entry.FolderPath))
-            ClaudeShortcutFolders.Add(entry.FolderPath);
+            ShortcutFolders.Add(entry.FolderPath);
         foreach (var s in entry.Shortcuts)
-            ClaudeShortcutStore.Add(s);
+            ShortcutStore.Add(s);
 
-        ClaudeShortcutsRecycleBin.Remove(id);
+        ShortcutsRecycleBin.Remove(id);
 
         _selectedFolder = entry.FolderPath;
         RebuildTree();
@@ -641,28 +641,28 @@ class ClaudeShortcutsForm : Form
 
     private void PurgeRecycledEntry(string id)
     {
-        var entry = ClaudeShortcutsRecycleBin.Get(id);
+        var entry = ShortcutsRecycleBin.Get(id);
         if (entry == null) return;
         var res = MessageBox.Show(this,
             $"Permanently delete \"{entry.FolderPath}\" and its contents?\n\nThis cannot be undone.",
             "Delete permanently",
             MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
         if (res != DialogResult.Yes) return;
-        ClaudeShortcutsRecycleBin.Remove(id);
+        ShortcutsRecycleBin.Remove(id);
         RebuildTree();
         RefreshList();
     }
 
     private void EmptyRecycleBin()
     {
-        int n = ClaudeShortcutsRecycleBin.Count;
+        int n = ShortcutsRecycleBin.Count;
         if (n == 0) return;
         var res = MessageBox.Show(this,
             $"Permanently delete all {n} item(s) from the recycle bin?\n\nThis cannot be undone.",
             "Empty recycle bin",
             MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
         if (res != DialogResult.Yes) return;
-        ClaudeShortcutsRecycleBin.Clear();
+        ShortcutsRecycleBin.Clear();
         RebuildTree();
         RefreshList();
     }
@@ -673,7 +673,7 @@ class ClaudeShortcutsForm : Form
         if (w < 120) w = 120;
         foreach (Control c in _listPanel.Controls)
         {
-            if (c is ClaudeShortcutRow or RecycledEntryRow or Label)
+            if (c is ShortcutRow or RecycledEntryRow or Label)
                 c.Width = w;
         }
     }
@@ -682,16 +682,16 @@ class ClaudeShortcutsForm : Form
     {
         _expandedId = _expandedId == id ? null : id;
         foreach (Control c in _listPanel.Controls)
-            if (c is ClaudeShortcutRow r) r.Expanded = r.ShortcutId == _expandedId;
+            if (c is ShortcutRow r) r.Expanded = r.ShortcutId == _expandedId;
     }
 
     private void NewShortcut()
     {
         if (!IsCreatableSelection) return;
-        using var dlg = new ClaudeShortcutEditForm(_theme, defaultFolder: _selectedFolder);
+        using var dlg = new ShortcutEditForm(_theme, defaultFolder: _selectedFolder);
         if (dlg.ShowDialog(this) == DialogResult.OK && dlg.Result != null)
         {
-            ClaudeShortcutStore.Add(dlg.Result);
+            ShortcutStore.Add(dlg.Result);
             _expandedId = dlg.Result.Id;
             RebuildTree();
             RefreshList();
@@ -700,19 +700,19 @@ class ClaudeShortcutsForm : Form
 
     private void Edit(string id)
     {
-        var cur = ClaudeShortcutStore.Get(id);
+        var cur = ShortcutStore.Get(id);
         if (cur == null) return;
-        using var dlg = new ClaudeShortcutEditForm(_theme, cur);
+        using var dlg = new ShortcutEditForm(_theme, cur);
         var dr = dlg.ShowDialog(this);
         if (dr != DialogResult.OK) return;
         if (dlg.DeleteRequested)
         {
-            ClaudeShortcutStore.Delete(id);
+            ShortcutStore.Delete(id);
             if (_expandedId == id) _expandedId = null;
         }
         else if (dlg.Result != null)
         {
-            ClaudeShortcutStore.Update(dlg.Result);
+            ShortcutStore.Update(dlg.Result);
         }
         RebuildTree();
         RefreshList();
@@ -720,7 +720,7 @@ class ClaudeShortcutsForm : Form
 
     private void Duplicate(string id)
     {
-        var src = ClaudeShortcutStore.Get(id);
+        var src = ShortcutStore.Get(id);
         if (src == null) return;
         var copy = src with
         {
@@ -731,7 +731,7 @@ class ClaudeShortcutsForm : Form
             LastLaunchedAt = null,
             LaunchCount = 0,
         };
-        ClaudeShortcutStore.Add(copy);
+        ShortcutStore.Add(copy);
         _expandedId = copy.Id;
         RebuildTree();
         RefreshList();
@@ -742,7 +742,7 @@ class ClaudeShortcutsForm : Form
         var res = MessageBox.Show(this, "Delete this shortcut?", "Confirm Delete",
             MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
         if (res != DialogResult.Yes) return;
-        ClaudeShortcutStore.Delete(id);
+        ShortcutStore.Delete(id);
         if (_expandedId == id) _expandedId = null;
         RebuildTree();
         RefreshList();
@@ -750,21 +750,21 @@ class ClaudeShortcutsForm : Form
 
     private void MoveShortcutToFolder(string id, string targetFolder)
     {
-        var cur = ClaudeShortcutStore.Get(id);
+        var cur = ShortcutStore.Get(id);
         if (cur == null) return;
-        targetFolder = ClaudeShortcutFolders.Normalize(targetFolder);
-        ClaudeShortcutStore.Update(cur with { FolderPath = targetFolder });
+        targetFolder = ShortcutFolders.Normalize(targetFolder);
+        ShortcutStore.Update(cur with { FolderPath = targetFolder });
         if (!string.IsNullOrEmpty(targetFolder))
-            ClaudeShortcutFolders.Add(targetFolder);
+            ShortcutFolders.Add(targetFolder);
         RebuildTree();
         RefreshList();
     }
 
     private void Launch(string id)
     {
-        var cur = ClaudeShortcutStore.Get(id);
+        var cur = ShortcutStore.Get(id);
         if (cur == null) return;
-        var result = ClaudeShortcutLauncher.Launch(cur);
+        var result = ShortcutLauncher.Launch(cur);
         if (!result.Ok)
         {
             MessageBox.Show(this, result.ErrorMessage ?? "Launch failed.", "Launch failed",
@@ -772,18 +772,18 @@ class ClaudeShortcutsForm : Form
         }
         else
         {
-            var updated = ClaudeShortcutStore.Get(id);
+            var updated = ShortcutStore.Get(id);
             if (updated != null)
             {
                 foreach (Control c in _listPanel.Controls)
-                    if (c is ClaudeShortcutRow r && r.ShortcutId == id) r.UpdateEntry(updated);
+                    if (c is ShortcutRow r && r.ShortcutId == id) r.UpdateEntry(updated);
             }
         }
     }
 
     private void OpenFolder(string id)
     {
-        var cur = ClaudeShortcutStore.Get(id);
+        var cur = ShortcutStore.Get(id);
         if (cur == null || !Directory.Exists(cur.WorkingDirectory)) return;
         try { Process.Start(new ProcessStartInfo(cur.WorkingDirectory) { UseShellExecute = true }); }
         catch (Exception ex)
@@ -794,7 +794,7 @@ class ClaudeShortcutsForm : Form
 
     private void ShowRowMenu(string id, Control anchor)
     {
-        var cur = ClaudeShortcutStore.Get(id);
+        var cur = ShortcutStore.Get(id);
         if (cur == null) return;
         var menu = new ContextMenuStrip { BackColor = _theme.BgHeader, ForeColor = _theme.TextPrimary };
         menu.Items.Add("Launch", null, (_, _) => Launch(id));
@@ -806,14 +806,14 @@ class ClaudeShortcutsForm : Form
         // can re-home a shortcut without editing.
         var moveMenu = new ToolStripMenuItem("Move to folder");
         var knownFolders = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var s in ClaudeShortcutStore.Load())
+        foreach (var s in ShortcutStore.Load())
         {
-            var p = ClaudeShortcutFolders.Normalize(s.FolderPath);
+            var p = ShortcutFolders.Normalize(s.FolderPath);
             if (!string.IsNullOrEmpty(p)) knownFolders.Add(p);
         }
-        foreach (var f in ClaudeShortcutFolders.Load())
+        foreach (var f in ShortcutFolders.Load())
         {
-            var p = ClaudeShortcutFolders.Normalize(f);
+            var p = ShortcutFolders.Normalize(f);
             if (!string.IsNullOrEmpty(p)) knownFolders.Add(p);
         }
 
@@ -850,7 +850,7 @@ class ClaudeShortcutsForm : Form
             {
                 _expandedId = null;
                 foreach (Control c in _listPanel.Controls)
-                    if (c is ClaudeShortcutRow r) r.Expanded = false;
+                    if (c is ShortcutRow r) r.Expanded = false;
                 e.Handled = true;
                 return;
             }
@@ -885,12 +885,12 @@ class ClaudeShortcutsForm : Form
 /// Collapsed: name, working dir, args, [Launch] and [⋯] buttons on the right.
 /// Expanded: + notes, last launched, launch count.
 /// </summary>
-class ClaudeShortcutRow : Panel
+class ShortcutRow : Panel
 {
     private const int CollapsedHeight = 72;
     private const int ExpandedHeight = 168;
 
-    private ClaudeShortcut _shortcut;
+    private Shortcut _shortcut;
     private readonly PluginTheme _theme;
     private readonly RoundedButton _launchBtn;
     private readonly Button _menuBtn;
@@ -916,13 +916,13 @@ class ClaudeShortcutRow : Panel
         }
     }
 
-    public void UpdateEntry(ClaudeShortcut s)
+    public void UpdateEntry(Shortcut s)
     {
         _shortcut = s;
         Invalidate();
     }
 
-    public ClaudeShortcutRow(ClaudeShortcut s, PluginTheme theme)
+    public ShortcutRow(Shortcut s, PluginTheme theme)
     {
         _shortcut = s;
         _theme = theme;
@@ -1040,7 +1040,7 @@ class ClaudeShortcutRow : Panel
         }
 
         string launcher;
-        if (_shortcut.LauncherMode == ClaudeLauncherMode.WindowsTerminal)
+        if (_shortcut.LauncherMode == LauncherMode.WindowsTerminal)
         {
             string baseLabel = string.IsNullOrEmpty(_shortcut.WtProfile) ? "wt" : $"wt · {_shortcut.WtProfile}";
             launcher = _shortcut.WtWindowTarget == WtWindowTarget.ExistingWindow
@@ -1053,7 +1053,7 @@ class ClaudeShortcutRow : Panel
         }
         var profile = LaunchProfiles.GetOrDefault(_shortcut.Profile);
         string cmd = string.IsNullOrEmpty(profile.Command) ? "custom" : profile.Command;
-        string thirdLine = $"{cmd} {_shortcut.ClaudeArgs}".Trim();
+        string thirdLine = $"{cmd} {_shortcut.Args}".Trim();
         thirdLine = $"{launcher}  •  {thirdLine}";
         using (var smFont = new Font("Segoe UI", 8.5f))
         using (var smBrush = new SolidBrush(_theme.TextSecondary))
@@ -1112,7 +1112,7 @@ class ClaudeShortcutRow : Panel
 
 /// <summary>
 /// Fixed "slot" row used for the hard-coded "main" and "recycle bin" entries
-/// in the Claude Shortcuts folder panel. Lives outside the TreeView so it
+/// in the Shortcuts folder panel. Lives outside the TreeView so it
 /// renders reliably; paints its own themed background + label and raises
 /// <see cref="Clicked"/> when pressed.
 /// </summary>

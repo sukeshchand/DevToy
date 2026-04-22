@@ -1,4 +1,4 @@
-namespace ProdToy.Plugins.ClaudeIntegration;
+namespace ProdToy.Plugins.ShortCutManager;
 
 /// <summary>
 /// A "kind" of shortcut — the binary to invoke, its default args, and the

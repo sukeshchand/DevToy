@@ -1,12 +1,12 @@
 using System.Drawing;
 using ProdToy.Sdk;
 
-namespace ProdToy.Plugins.ClaudeIntegration;
+namespace ProdToy.Plugins.ShortCutManager;
 
-class ClaudeShortcutEditForm : Form
+class ShortcutEditForm : Form
 {
     private readonly PluginTheme _theme;
-    private readonly ClaudeShortcut? _existing;
+    private readonly Shortcut? _existing;
     private readonly string _folderPath;
 
     private readonly TextBox _nameBox;
@@ -28,17 +28,17 @@ class ClaudeShortcutEditForm : Form
     private readonly RoundedButton _editProfileBtn;
     private readonly RoundedButton _delProfileBtn;
 
-    public ClaudeShortcut? Result { get; private set; }
+    public Shortcut? Result { get; private set; }
     public bool DeleteRequested { get; private set; }
 
-    public ClaudeShortcutEditForm(PluginTheme theme, ClaudeShortcut? existing = null, string? defaultFolder = null)
+    public ShortcutEditForm(PluginTheme theme, Shortcut? existing = null, string? defaultFolder = null)
     {
         _theme = theme;
         _existing = existing;
         // On edit, preserve the shortcut's current folder. On create, take the
         // folder from the tree selection passed by the parent form (required —
         // the parent gates "+ New Shortcut" on a non-root selection).
-        _folderPath = ClaudeShortcutFolders.Normalize(
+        _folderPath = ShortcutFolders.Normalize(
             existing?.FolderPath ?? defaultFolder ?? "");
         bool isEdit = existing != null;
 
@@ -151,7 +151,7 @@ class ClaudeShortcutEditForm : Form
 
         _argsLabel = AddLabel($"{initialProfile.DisplayName} args", pad, y);
         _argsBox = MakeTextBox(inputX, y, inputW);
-        _argsBox.Text = existing?.ClaudeArgs ?? initialProfile.DefaultArgs;
+        _argsBox.Text = existing?.Args ?? initialProfile.DefaultArgs;
         y += 34;
 
         _argsHintLabel = new Label
@@ -191,7 +191,7 @@ class ClaudeShortcutEditForm : Form
         _launcherCombo = MakeCombo(inputX, y, 200);
         _launcherCombo.Items.Add("Windows Terminal");
         _launcherCombo.Items.Add("Plain cmd window");
-        _launcherCombo.SelectedIndex = existing?.LauncherMode == ClaudeLauncherMode.CmdWindow ? 1 : 0;
+        _launcherCombo.SelectedIndex = existing?.LauncherMode == LauncherMode.CmdWindow ? 1 : 0;
         y += 34;
 
         // Only meaningful when launcher = Windows Terminal. Disabled for cmd
@@ -534,10 +534,10 @@ class ClaudeShortcutEditForm : Form
         }
 
         var launcher = _launcherCombo.SelectedIndex == 1
-            ? ClaudeLauncherMode.CmdWindow
-            : ClaudeLauncherMode.WindowsTerminal;
+            ? LauncherMode.CmdWindow
+            : LauncherMode.WindowsTerminal;
 
-        Result = new ClaudeShortcut
+        Result = new Shortcut
         {
             Id = _existing?.Id ?? Guid.NewGuid().ToString("N"),
             Name = _nameBox.Text.Trim(),
@@ -546,7 +546,7 @@ class ClaudeShortcutEditForm : Form
                 ? LaunchProfiles.All[_launchProfileCombo.SelectedIndex].Id
                 : LaunchProfiles.Default.Id,
             WorkingDirectory = _dirBox.Text.Trim(),
-            ClaudeArgs = _argsBox.Text.Trim(),
+            Args = _argsBox.Text.Trim(),
             WtProfile = _profileCombo.Text.Trim(),
             LauncherMode = launcher,
             WtWindowTarget = _windowTargetCombo.SelectedIndex == 1
@@ -571,7 +571,7 @@ class ClaudeShortcutEditForm : Form
 
     private void OpenCreateProfile()
     {
-        using var dlg = new ClaudeWtProfileCreateForm(_theme);
+        using var dlg = new WtProfileCreateForm(_theme);
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
         if (string.IsNullOrWhiteSpace(dlg.ResultProfileName)) return;
         ReloadProfileDropdown(selectName: dlg.ResultProfileName);
@@ -593,7 +593,7 @@ class ClaudeShortcutEditForm : Form
             return;
         }
 
-        using var dlg = new ClaudeWtProfileCreateForm(_theme, existing);
+        using var dlg = new WtProfileCreateForm(_theme, existing);
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
         if (dlg.Deleted)

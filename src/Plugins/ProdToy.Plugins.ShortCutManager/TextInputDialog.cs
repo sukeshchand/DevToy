@@ -1,7 +1,7 @@
 using System.Drawing;
 using ProdToy.Sdk;
 
-namespace ProdToy.Plugins.ClaudeIntegration;
+namespace ProdToy.Plugins.ShortCutManager;
 
 /// <summary>
 /// Tiny modal prompt for a single-line text input, themed to match the host.

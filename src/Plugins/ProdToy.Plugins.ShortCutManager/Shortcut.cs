@@ -1,8 +1,8 @@
 using System.Text.Json.Serialization;
 
-namespace ProdToy.Plugins.ClaudeIntegration;
+namespace ProdToy.Plugins.ShortCutManager;
 
-enum ClaudeLauncherMode
+enum LauncherMode
 {
     WindowsTerminal,
     CmdWindow,
@@ -14,8 +14,8 @@ enum ClaudeLauncherMode
 ///   passes no -w flag so WT uses its own new-window behavior).
 ///   <see cref="ExistingWindow"/> → reuse the active/last-focused WT window as
 ///   a new tab. Maps to <c>wt.exe -w 0 …</c>.
-/// Only consulted when <see cref="ClaudeShortcut.LauncherMode"/> is
-/// <see cref="ClaudeLauncherMode.WindowsTerminal"/>.
+/// Only consulted when <see cref="Shortcut.LauncherMode"/> is
+/// <see cref="LauncherMode.WindowsTerminal"/>.
 /// </summary>
 enum WtWindowTarget
 {
@@ -24,11 +24,13 @@ enum WtWindowTarget
 }
 
 /// <summary>
-/// A saved "launch Claude in a specific project" shortcut. Persisted as JSON in
+/// A saved "launch a CLI in a specific project" shortcut. Persisted as JSON in
 /// the plugin's data directory (shortcuts.json). Fields are all back-compat —
-/// omitting any field in the JSON produces the default.
+/// omitting any field in the JSON produces the default. JSON property names
+/// preserve the historical "claude" prefix where present so shortcuts saved
+/// under the ClaudeIntegration plugin keep loading unchanged.
 /// </summary>
-sealed record ClaudeShortcut
+sealed record Shortcut
 {
     [JsonPropertyName("id")]
     public string Id { get; init; } = Guid.NewGuid().ToString("N");
@@ -47,15 +49,17 @@ sealed record ClaudeShortcut
     [JsonPropertyName("workingDirectory")]
     public string WorkingDirectory { get; init; } = "";
 
+    // JSON property name stays "claudeArgs" for back-compat with existing
+    // shortcut data; the C# property is the generic "Args".
     [JsonPropertyName("claudeArgs")]
-    public string ClaudeArgs { get; init; } = "--dangerously-skip-permissions --continue";
+    public string Args { get; init; } = "--dangerously-skip-permissions --continue";
 
     /// <summary>Windows Terminal profile name, e.g. "Command Prompt". Empty = wt default.</summary>
     [JsonPropertyName("wtProfile")]
     public string WtProfile { get; init; } = "Command Prompt";
 
     [JsonPropertyName("launcherMode")]
-    public ClaudeLauncherMode LauncherMode { get; init; } = ClaudeLauncherMode.WindowsTerminal;
+    public LauncherMode LauncherMode { get; init; } = LauncherMode.WindowsTerminal;
 
     /// <summary>
     /// For WindowsTerminal launcher only — whether to reuse an existing WT

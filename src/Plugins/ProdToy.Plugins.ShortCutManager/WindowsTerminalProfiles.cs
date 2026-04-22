@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace ProdToy.Plugins.ClaudeIntegration;
+namespace ProdToy.Plugins.ShortCutManager;
 
 /// <summary>
 /// Reads (and optionally writes) the user's Windows Terminal <c>settings.json</c>.
@@ -307,7 +307,7 @@ static class WindowsTerminalProfiles
 }
 
 /// <summary>
-/// Data collected by <see cref="ClaudeWtProfileCreateForm"/>. Only non-empty
+/// Data collected by <see cref="WtProfileCreateForm"/>. Only non-empty
 /// fields are written to settings.json so the resulting profile stays minimal
 /// and defers to WT's defaults for anything the user left blank.
 /// </summary>

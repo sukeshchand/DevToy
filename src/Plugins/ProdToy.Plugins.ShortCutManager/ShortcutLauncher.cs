@@ -1,35 +1,36 @@
 using System.Diagnostics;
 using System.Windows.Forms;
 
-namespace ProdToy.Plugins.ClaudeIntegration;
+namespace ProdToy.Plugins.ShortCutManager;
 
 /// <summary>
-/// Launches a ClaudeShortcut by building a Windows Terminal (or plain cmd)
-/// command line that opens <c>claude</c> in the configured working directory.
+/// Launches a <see cref="Shortcut"/> by building a Windows Terminal (or plain
+/// cmd) command line that runs the shortcut's <see cref="LaunchProfile"/>
+/// command in the configured working directory.
 ///
 /// Primary command when WindowsTerminal mode + wt.exe present:
-///     wt.exe -p "&lt;WtProfile&gt;" -d "&lt;WorkingDirectory&gt;" cmd /k claude &lt;args&gt;
+///     wt.exe -p "&lt;WtProfile&gt;" -d "&lt;WorkingDirectory&gt;" cmd /k &lt;command&gt; &lt;args&gt;
 ///
 /// Fallback (no wt.exe, or CmdWindow mode):
-///     cmd.exe /k "cd /d &lt;WorkingDirectory&gt; && claude &lt;args&gt;"
+///     cmd.exe /k "cd /d &lt;WorkingDirectory&gt; && &lt;command&gt; &lt;args&gt;"
 ///
-/// If <see cref="ClaudeShortcut.RequireAdmin"/> is set, the process is started
+/// If <see cref="Shortcut.RequireAdmin"/> is set, the process is started
 /// with <c>UseShellExecute=true, Verb="runas"</c> — triggers the standard UAC
 /// prompt. If the user cancels UAC we surface a friendly error instead of
 /// crashing.
 /// </summary>
-static class ClaudeShortcutLauncher
+static class ShortcutLauncher
 {
     public readonly record struct LaunchResult(bool Ok, string? ErrorMessage = null);
 
-    public static LaunchResult Launch(ClaudeShortcut s)
+    public static LaunchResult Launch(Shortcut s)
     {
         if (string.IsNullOrWhiteSpace(s.WorkingDirectory))
             return new LaunchResult(false, "Working directory is empty.");
         if (!Directory.Exists(s.WorkingDirectory))
             return new LaunchResult(false, $"Working directory doesn't exist: {s.WorkingDirectory}");
 
-        bool useWt = s.LauncherMode == ClaudeLauncherMode.WindowsTerminal && TryFindWindowsTerminal(out _);
+        bool useWt = s.LauncherMode == LauncherMode.WindowsTerminal && TryFindWindowsTerminal(out _);
         ProcessStartInfo psi = useWt ? BuildWtStartInfo(s) : BuildCmdStartInfo(s);
 
         if (s.RequireAdmin)
@@ -45,7 +46,7 @@ static class ClaudeShortcutLauncher
         try
         {
             Process.Start(psi);
-            ClaudeShortcutStore.RecordLaunch(s.Id);
+            ShortcutStore.RecordLaunch(s.Id);
             SchedulePostLaunchKeys(s);
             return new LaunchResult(true);
         }
@@ -61,7 +62,7 @@ static class ClaudeShortcutLauncher
         }
     }
 
-    private static ProcessStartInfo BuildWtStartInfo(ClaudeShortcut s)
+    private static ProcessStartInfo BuildWtStartInfo(Shortcut s)
     {
         // wt.exe resolves via %PATH% on modern Windows (Windows Terminal
         // installs a shim in %LocalAppData%\Microsoft\WindowsApps).
@@ -101,7 +102,7 @@ static class ClaudeShortcutLauncher
         return psi;
     }
 
-    private static ProcessStartInfo BuildCmdStartInfo(ClaudeShortcut s)
+    private static ProcessStartInfo BuildCmdStartInfo(Shortcut s)
     {
         // Plain cmd window fallback. We wrap the whole thing in one argument
         // so cmd /k gets the combined "cd && [title &&] claude" line.
@@ -122,10 +123,10 @@ static class ClaudeShortcutLauncher
         };
     }
 
-    private static string BuildProfileCmdline(ClaudeShortcut s)
+    private static string BuildProfileCmdline(Shortcut s)
     {
         var profile = LaunchProfiles.GetOrDefault(s.Profile);
-        string args = (s.ClaudeArgs ?? "").Trim();
+        string args = (s.Args ?? "").Trim();
 
         // Custom profile has no fixed binary — args is the full command.
         if (string.IsNullOrEmpty(profile.Command))
@@ -182,7 +183,7 @@ static class ClaudeShortcutLauncher
     /// message-pump requirement is satisfied. Exceptions are swallowed —
     /// these keystrokes are an optional convenience, never load-bearing.
     /// </summary>
-    private static void SchedulePostLaunchKeys(ClaudeShortcut s)
+    private static void SchedulePostLaunchKeys(Shortcut s)
     {
         if (string.IsNullOrWhiteSpace(s.PostLaunchSendKeys)) return;
         int delay = Math.Clamp(s.PostLaunchDelayMs, 100, 60_000);

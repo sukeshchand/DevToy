@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 
-namespace ProdToy.Plugins.ClaudeIntegration;
+namespace ProdToy.Plugins.ShortCutManager;
 
 /// <summary>
 /// Persists folder paths so they survive restart even when no shortcut lives
@@ -12,7 +12,7 @@ namespace ProdToy.Plugins.ClaudeIntegration;
 /// no double slashes). Compared case-insensitively but stored with user-chosen
 /// casing preserved for display.
 /// </summary>
-static class ClaudeShortcutFolders
+static class ShortcutFolders
 {
     private static string _file = "";
     private static readonly object _lock = new();
@@ -40,7 +40,7 @@ static class ClaudeShortcutFolders
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"ClaudeShortcutFolders: load failed: {ex.Message}");
+                Debug.WriteLine($"ShortcutFolders: load failed: {ex.Message}");
                 _cache = new();
             }
             return new List<string>(_cache);
@@ -180,7 +180,7 @@ static class ClaudeShortcutFolders
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"ClaudeShortcutFolders: save failed: {ex.Message}");
+            Debug.WriteLine($"ShortcutFolders: save failed: {ex.Message}");
         }
     }
 }

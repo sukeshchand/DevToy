@@ -1,13 +1,13 @@
 using System.Diagnostics;
 using System.Text.Json;
 
-namespace ProdToy.Plugins.ClaudeIntegration;
+namespace ProdToy.Plugins.ShortCutManager;
 
 /// <summary>
 /// One folder deletion captured for restore. FolderPath is the "anchor" the
 /// user deleted; Subfolders holds every path that was under (or equal to) it
 /// at the time, and Shortcuts holds every shortcut that lived in any of those
-/// paths. All shortcut <see cref="ClaudeShortcut.FolderPath"/> values are
+/// paths. All shortcut <see cref="Shortcut.FolderPath"/> values are
 /// preserved as-is so a restore puts them back where they came from.
 /// </summary>
 sealed record RecycleBinEntry
@@ -16,13 +16,13 @@ sealed record RecycleBinEntry
     public DateTime DeletedAt { get; init; } = DateTime.Now;
     public string FolderPath { get; init; } = "";
     public List<string> Subfolders { get; init; } = new();
-    public List<ClaudeShortcut> Shortcuts { get; init; } = new();
+    public List<Shortcut> Shortcuts { get; init; } = new();
 }
 
 /// <summary>
 /// Persistence for soft-deleted folders. JSON file in the plugin data dir.
 /// </summary>
-static class ClaudeShortcutsRecycleBin
+static class ShortcutsRecycleBin
 {
     private static string _file = "";
     private static readonly object _lock = new();

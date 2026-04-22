@@ -1,36 +1,36 @@
 using System.Diagnostics;
 using System.Text.Json;
 
-namespace ProdToy.Plugins.ClaudeIntegration;
+namespace ProdToy.Plugins.ShortCutManager;
 
 /// <summary>
-/// Persistence for ClaudeShortcut records. Stored in its own file rather than
+/// Persistence for Shortcut records. Stored in its own file rather than
 /// the main plugin settings.json to keep concerns clean (settings vs. user-
 /// managed project shortcuts). Cached in memory; writes are atomic full-file.
 /// </summary>
-static class ClaudeShortcutStore
+static class ShortcutStore
 {
     private static string _file = "";
     private static readonly object _lock = new();
     private static readonly JsonSerializerOptions _opts = new() { WriteIndented = true };
-    private static List<ClaudeShortcut>? _cache;
+    private static List<Shortcut>? _cache;
 
     public static void Initialize(string dataDirectory)
     {
         _file = Path.Combine(dataDirectory, "shortcuts.json");
     }
 
-    public static List<ClaudeShortcut> Load()
+    public static List<Shortcut> Load()
     {
         lock (_lock)
         {
-            if (_cache != null) return new List<ClaudeShortcut>(_cache);
+            if (_cache != null) return new List<Shortcut>(_cache);
             try
             {
                 if (File.Exists(_file))
                 {
                     var json = File.ReadAllText(_file);
-                    _cache = JsonSerializer.Deserialize<List<ClaudeShortcut>>(json) ?? new();
+                    _cache = JsonSerializer.Deserialize<List<Shortcut>>(json) ?? new();
                 }
                 else
                 {
@@ -39,19 +39,19 @@ static class ClaudeShortcutStore
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"ClaudeShortcutStore: load failed: {ex.Message}");
+                Debug.WriteLine($"ShortcutStore: load failed: {ex.Message}");
                 _cache = new();
             }
-            return new List<ClaudeShortcut>(_cache);
+            return new List<Shortcut>(_cache);
         }
     }
 
-    public static void Save(List<ClaudeShortcut> shortcuts)
+    public static void Save(List<Shortcut> shortcuts)
     {
         string json;
         lock (_lock)
         {
-            _cache = new List<ClaudeShortcut>(shortcuts);
+            _cache = new List<Shortcut>(shortcuts);
             json = JsonSerializer.Serialize(_cache, _opts);
         }
         try
@@ -62,21 +62,21 @@ static class ClaudeShortcutStore
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"ClaudeShortcutStore: save failed: {ex.Message}");
+            Debug.WriteLine($"ShortcutStore: save failed: {ex.Message}");
         }
     }
 
-    public static ClaudeShortcut? Get(string id) =>
+    public static Shortcut? Get(string id) =>
         Load().FirstOrDefault(s => s.Id == id);
 
-    public static void Add(ClaudeShortcut s)
+    public static void Add(Shortcut s)
     {
         var all = Load();
         all.Add(s);
         Save(all);
     }
 
-    public static void Update(ClaudeShortcut s)
+    public static void Update(Shortcut s)
     {
         var all = Load();
         int idx = all.FindIndex(x => x.Id == s.Id);

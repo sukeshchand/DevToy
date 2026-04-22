@@ -1,7 +1,7 @@
 using System.Drawing;
 using ProdToy.Sdk;
 
-namespace ProdToy.Plugins.ClaudeIntegration;
+namespace ProdToy.Plugins.ShortCutManager;
 
 /// <summary>
 /// Modal form for creating a new — or editing an existing — Windows Terminal
@@ -9,7 +9,7 @@ namespace ProdToy.Plugins.ClaudeIntegration;
 /// resulting profile stays minimal and defers to WT defaults for anything the
 /// user left blank.
 /// </summary>
-class ClaudeWtProfileCreateForm : Form
+class WtProfileCreateForm : Form
 {
     private readonly PluginTheme _theme;
     private readonly string? _originalName;
@@ -31,7 +31,7 @@ class ClaudeWtProfileCreateForm : Form
     /// <summary>True if the user clicked Delete (and confirmed) instead of Save.</summary>
     public bool Deleted { get; private set; }
 
-    public ClaudeWtProfileCreateForm(PluginTheme theme, WtProfileDraft? existing = null)
+    public WtProfileCreateForm(PluginTheme theme, WtProfileDraft? existing = null)
     {
         _theme = theme;
         _originalName = existing?.Name;
