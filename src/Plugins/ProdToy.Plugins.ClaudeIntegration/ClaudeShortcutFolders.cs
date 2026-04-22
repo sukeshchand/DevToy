@@ -4,9 +4,9 @@ using System.Text.Json;
 namespace ProdToy.Plugins.ClaudeIntegration;
 
 /// <summary>
-/// Persists empty folder paths so they survive restart even when no shortcut
-/// lives under them. Live (in-use) folders are derived from shortcuts at read
-/// time; this store only plugs the empty-folder hole.
+/// Persists folder paths so they survive restart even when no shortcut lives
+/// under them. Live folders are also derived from shortcuts at read time; this
+/// store plugs the empty-folder hole.
 ///
 /// Paths are slash-separated, normalized (trimmed, no leading/trailing slashes,
 /// no double slashes). Compared case-insensitively but stored with user-chosen
@@ -62,9 +62,7 @@ static class ClaudeShortcutFolders
         }
     }
 
-    /// <summary>
-    /// Removes the exact path (only if present). Does NOT remove descendants.
-    /// </summary>
+    /// <summary>Removes the exact path only. Does not remove descendants.</summary>
     public static void Remove(string path)
     {
         path = Normalize(path);
@@ -114,7 +112,6 @@ static class ClaudeShortcutFolders
                     changed = true;
                 }
             }
-            // Dedupe in case rename collapsed entries.
             var deduped = list
                 .Where(p => !string.IsNullOrEmpty(p))
                 .GroupBy(p => p, StringComparer.OrdinalIgnoreCase)
@@ -124,8 +121,6 @@ static class ClaudeShortcutFolders
             if (changed) Save(deduped);
         }
     }
-
-    // ───── helpers ─────
 
     public static string Normalize(string? path)
     {

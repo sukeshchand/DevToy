@@ -1,1 +1,11 @@
-New Claude Shortcuts manager: save multiple project launch configurations (working dir, args, WT profile, admin flag) and launch Claude in Windows Terminal with one click — replaces per-project .bat files.
+Claude Shortcuts — folder tree fix + polish
+  - Fix: the hard-coded root ("★ Shortcuts") was being hidden on some setups when the owner-draw path returned zero bounds. Switched to standard tree rendering so the root row is always visible.
+  - Icons are now inline in the node text (★ for root, 📁 for folders) and the root is bolded via NodeFont.
+  - ShowRootLines and the default +/- chevron are back on so expand/collapse works on the root and its children.
+
+  (Previous) Folder tree view
+  - Left-hand tree with a hard-coded root "Shortcuts" (non-renameable, non-deletable). Create subfolders at any depth from + Folder or right-click.
+  - "+ New Shortcut" is gated on a non-root folder selection so every shortcut lands in a folder.
+  - The right list shows only the shortcuts in the selected folder (exact match); folder counts are recursive.
+  - Rename/Delete folder with a safe "move contents up to parent" path, and a Move-to-folder submenu on each row.
+  - Folder structure persisted to its own shortcut-folders.json.

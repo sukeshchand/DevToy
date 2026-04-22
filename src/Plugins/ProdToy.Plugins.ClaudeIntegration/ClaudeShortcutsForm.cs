@@ -10,8 +10,10 @@ class ClaudeShortcutsForm : Form
     private readonly PluginTheme _theme;
     private readonly FlowLayoutPanel _listPanel;
     private readonly TreeView _folderTree;
+    private readonly RoundedButton _newShortcutBtn;
     private string? _expandedId;
-    /// <summary>Currently selected folder path ("" = root = "All").</summary>
+
+    /// <summary>Currently selected folder path. "" = hard-coded root.</summary>
     private string _selectedFolder = "";
 
     public ClaudeShortcutsForm(PluginTheme theme)
@@ -54,11 +56,11 @@ class ClaudeShortcutsForm : Form
         };
         toolbar.Controls.Add(titleLabel);
 
-        var newBtn = MakeButton("+ New Shortcut", theme.Primary, Color.White);
-        newBtn.Size = new Size(140, 30);
-        newBtn.Location = new Point(pad + 220, 14);
-        newBtn.Click += (_, _) => NewShortcut();
-        toolbar.Controls.Add(newBtn);
+        _newShortcutBtn = MakeButton("+ New Shortcut", theme.Primary, Color.White);
+        _newShortcutBtn.Size = new Size(140, 30);
+        _newShortcutBtn.Location = new Point(pad + 220, 14);
+        _newShortcutBtn.Click += (_, _) => NewShortcut();
+        toolbar.Controls.Add(_newShortcutBtn);
 
         var hintLabel = new Label
         {
@@ -83,10 +85,10 @@ class ClaudeShortcutsForm : Form
             Orientation = Orientation.Vertical,
             SplitterWidth = 4,
             BackColor = theme.Border,
-            Panel1MinSize = 180,
+            Panel1MinSize = 200,
             Panel2MinSize = 360,
         };
-        split.SplitterDistance = 260;
+        split.SplitterDistance = 280;
         Controls.Add(split);
 
         // --- Left: folder tree + small toolbar ---
@@ -116,7 +118,6 @@ class ClaudeShortcutsForm : Form
             Text = "+ Folder",
             Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Bold),
             Size = new Size(82, 24),
-            Location = new Point(0, 4),
             FlatStyle = FlatStyle.Flat,
             BackColor = theme.PrimaryDim,
             ForeColor = theme.TextPrimary,
@@ -129,6 +130,9 @@ class ClaudeShortcutsForm : Form
         newFolderBtn.Click += (_, _) => CreateFolder(parent: _selectedFolder);
         folderToolbar.Controls.Add(newFolderBtn);
 
+        // Standard (non-owner-draw) rendering. OwnerDrawAll had an issue where
+        // the hard-coded root row could render with zero bounds on some setups
+        // and silently skip drawing. Standard rendering always draws the root.
         _folderTree = new TreeView
         {
             Dock = DockStyle.Fill,
@@ -137,33 +141,17 @@ class ClaudeShortcutsForm : Form
             BorderStyle = BorderStyle.FixedSingle,
             Font = new Font("Segoe UI", 9.5f),
             ShowLines = false,
-            ShowPlusMinus = false, // we draw our own chevron
-            ShowRootLines = false,
+            ShowPlusMinus = true,
+            ShowRootLines = true,
             HideSelection = false,
             FullRowSelect = true,
             Indent = 16,
             ItemHeight = 26,
-            DrawMode = TreeViewDrawMode.OwnerDrawAll,
-        };
-        _folderTree.DrawNode += OnDrawTreeNode;
-        // Single-click on a node with children toggles expand when clicked on
-        // the chevron area — keeps the UX close to normal tree behavior now
-        // that we've turned off the built-in +/- indicator.
-        _folderTree.NodeMouseClick += (_, e) =>
-        {
-            if (e.Button == MouseButtons.Left && e.Node != null && e.Node.Nodes.Count > 0)
-            {
-                int chevronLeft = (e.Node.Level + 1) * _folderTree.Indent - 4;
-                int chevronRight = chevronLeft + 18;
-                if (e.X >= chevronLeft && e.X <= chevronRight)
-                {
-                    e.Node.Toggle();
-                }
-            }
         };
         _folderTree.AfterSelect += (_, e) =>
         {
             _selectedFolder = (e.Node?.Tag as string) ?? "";
+            UpdateNewShortcutButtonState();
             RefreshList();
         };
         _folderTree.NodeMouseClick += (_, e) =>
@@ -192,6 +180,7 @@ class ClaudeShortcutsForm : Form
         KeyDown += OnKey;
 
         RebuildTree();
+        UpdateNewShortcutButtonState();
         RefreshList();
     }
 
@@ -206,18 +195,29 @@ class ClaudeShortcutsForm : Form
         }
     }
 
+    private bool IsRootSelected => string.IsNullOrEmpty(_selectedFolder);
+
+    private void UpdateNewShortcutButtonState()
+    {
+        _newShortcutBtn.Enabled = !IsRootSelected;
+        _newShortcutBtn.BackColor = IsRootSelected ? _theme.PrimaryDim : _theme.Primary;
+        _newShortcutBtn.ForeColor = IsRootSelected ? _theme.TextSecondary : Color.White;
+    }
+
     private void RefreshList()
     {
         _listPanel.SuspendLayout();
         _listPanel.Controls.Clear();
 
         var all = ClaudeShortcutStore.Load();
-        // Filter by selected folder: root (empty) shows everything;
-        // non-empty shows the folder itself + descendants.
-        var filtered = string.IsNullOrEmpty(_selectedFolder)
-            ? all
-            : all.Where(s => ClaudeShortcutFolders.IsSelfOrDescendant(
-                ClaudeShortcutFolders.Normalize(s.FolderPath), _selectedFolder)).ToList();
+
+        // Exact-match filter: shortcuts whose normalized FolderPath equals the
+        // current selection. Root ("") shows orphans (shortcuts without a
+        // folder) so they remain accessible for moving to a proper folder.
+        var filtered = all.Where(s => string.Equals(
+            ClaudeShortcutFolders.Normalize(s.FolderPath),
+            _selectedFolder,
+            StringComparison.OrdinalIgnoreCase)).ToList();
 
         var ordered = filtered
             .OrderByDescending(s => s.LastLaunchedAt ?? DateTime.MinValue)
@@ -226,19 +226,20 @@ class ClaudeShortcutsForm : Form
 
         if (ordered.Count == 0)
         {
-            var emptyText = string.IsNullOrEmpty(_selectedFolder)
-                ? "No shortcuts yet. Click \"+ New Shortcut\" to add your first project."
-                : $"No shortcuts in \"{_selectedFolder}\".";
+            string emptyText = IsRootSelected
+                ? "Select a folder on the left, or create one with \"+ Folder\".\n\nShortcuts live inside folders — pick a folder to add a new shortcut."
+                : $"No shortcuts in \"{_selectedFolder}\" yet.\nClick \"+ New Shortcut\" above to add one.";
+
             var empty = new Label
             {
                 Text = emptyText,
                 Font = new Font("Segoe UI", 10.5f),
                 ForeColor = _theme.TextSecondary,
                 AutoSize = false,
-                Size = new Size(_listPanel.ClientSize.Width - 24, 60),
+                Size = new Size(_listPanel.ClientSize.Width - 24, 90),
                 TextAlign = ContentAlignment.MiddleCenter,
                 BackColor = Color.Transparent,
-                Margin = new Padding(0, 30, 0, 0),
+                Margin = new Padding(0, 40, 0, 0),
             };
             _listPanel.Controls.Add(empty);
         }
@@ -267,25 +268,19 @@ class ClaudeShortcutsForm : Form
     private void RebuildTree()
     {
         var all = ClaudeShortcutStore.Load();
-        var shortcutCountByPath = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var allFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // Union of live folder paths (from shortcuts) + persisted empty folders.
         foreach (var s in all)
         {
             var p = ClaudeShortcutFolders.Normalize(s.FolderPath);
-            if (!string.IsNullOrEmpty(p))
+            if (string.IsNullOrEmpty(p)) continue;
+            allFolders.Add(p);
+            for (var parent = ClaudeShortcutFolders.ParentOf(p);
+                 !string.IsNullOrEmpty(parent);
+                 parent = ClaudeShortcutFolders.ParentOf(parent))
             {
-                allFolders.Add(p);
-                // Ensure ancestors are represented too so "Work/Backend" creates "Work".
-                for (var parent = ClaudeShortcutFolders.ParentOf(p); !string.IsNullOrEmpty(parent);
-                     parent = ClaudeShortcutFolders.ParentOf(parent))
-                {
-                    allFolders.Add(parent);
-                }
+                allFolders.Add(parent);
             }
-            if (!string.IsNullOrEmpty(p))
-                shortcutCountByPath[p] = shortcutCountByPath.GetValueOrDefault(p) + 1;
         }
         foreach (var f in ClaudeShortcutFolders.Load())
             allFolders.Add(ClaudeShortcutFolders.Normalize(f));
@@ -293,17 +288,19 @@ class ClaudeShortcutsForm : Form
         _folderTree.BeginUpdate();
         try
         {
-            // Preserve expansion state so the tree doesn't jarringly collapse on refresh.
             var expanded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             CollectExpanded(_folderTree.Nodes, expanded);
 
             _folderTree.Nodes.Clear();
 
             int totalCount = all.Count;
-            var root = new TreeNode($"All  ({totalCount})") { Tag = "" };
+            var root = new TreeNode($"★ Shortcuts  ({totalCount})")
+            {
+                Tag = "",
+                NodeFont = new Font(_folderTree.Font, FontStyle.Bold),
+            };
             _folderTree.Nodes.Add(root);
 
-            // Sorted alphabetical for stability.
             foreach (var path in allFolders.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
             {
                 var parts = path.Split('/');
@@ -329,7 +326,6 @@ class ClaudeShortcutsForm : Form
                 node?.Expand();
             }
 
-            // Re-select the previously selected folder if it still exists; else root.
             var sel = FindNodeByPath(_folderTree.Nodes, _selectedFolder) ?? root;
             _folderTree.SelectedNode = sel;
             _selectedFolder = (sel.Tag as string) ?? "";
@@ -367,77 +363,12 @@ class ClaudeShortcutsForm : Form
         return null;
     }
 
-    /// <summary>Builds the node label with the count of shortcuts under this path (recursive).</summary>
+    /// <summary>Builds the node label (with folder glyph) and a recursive count of shortcuts.</summary>
     private static string FormatNodeText(string leafName, string fullPath, List<ClaudeShortcut> all)
     {
         int count = all.Count(s => ClaudeShortcutFolders.IsSelfOrDescendant(
             ClaudeShortcutFolders.Normalize(s.FolderPath), fullPath));
-        return count > 0 ? $"{leafName}  ({count})" : leafName;
-    }
-
-    /// <summary>
-    /// Owner-draws the entire row. Using OwnerDrawAll (vs. OwnerDrawText) means
-    /// the TreeView does NOT paint its default selection background first, so
-    /// we don't get the light-gray bleed-through on selected nodes.
-    /// </summary>
-    private void OnDrawTreeNode(object? sender, DrawTreeNodeEventArgs e)
-    {
-        if (e.Node == null) return;
-
-        var g = e.Graphics;
-        var bounds = e.Bounds;
-        if (bounds.Width <= 0 || bounds.Height <= 0) return;
-
-        bool selected = _folderTree.SelectedNode == e.Node;
-        bool isRoot = e.Node.Level == 0;
-
-        // Fill the full row width (not just e.Bounds, which can be text-only).
-        var rowRect = new Rectangle(0, bounds.Y, _folderTree.ClientSize.Width, bounds.Height);
-        var bg = selected ? _theme.Primary : _theme.BgHeader;
-        using (var bgBrush = new SolidBrush(bg))
-            g.FillRectangle(bgBrush, rowRect);
-
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-
-        int left = (e.Node.Level + 1) * _folderTree.Indent - 12;
-        if (left < 4) left = 4;
-
-        var glyphColor = selected ? Color.White : _theme.TextSecondary;
-        var textColor = selected ? Color.White : _theme.TextPrimary;
-
-        // Chevron (only if node has children).
-        if (e.Node.Nodes.Count > 0)
-        {
-            using var chevronFont = new Font("Segoe UI", 8.5f, FontStyle.Bold);
-            using var chevronBrush = new SolidBrush(glyphColor);
-            string chev = e.Node.IsExpanded ? "⌄" : "›";
-            var sf = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Center };
-            g.DrawString(chev, chevronFont, chevronBrush, new RectangleF(left, bounds.Y, 14, bounds.Height), sf);
-        }
-        int x = left + 16;
-
-        // Folder / root glyph.
-        string iconText = isRoot ? "★" : (e.Node.IsExpanded && e.Node.Nodes.Count > 0 ? "📂" : "📁");
-        using (var iconFont = new Font("Segoe UI Emoji", 10f))
-        using (var iconBrush = new SolidBrush(textColor))
-        {
-            var sfIcon = new StringFormat { LineAlignment = StringAlignment.Center };
-            g.DrawString(iconText, iconFont, iconBrush, new RectangleF(x, bounds.Y, 20, bounds.Height), sfIcon);
-        }
-        x += 22;
-
-        // Node text (fills remaining row width).
-        using var font = new Font(_folderTree.Font, isRoot ? FontStyle.Bold : FontStyle.Regular);
-        using var textBrush = new SolidBrush(textColor);
-        var textRect = new RectangleF(x, bounds.Y, rowRect.Right - x - 4, bounds.Height);
-        using var sfText = new StringFormat
-        {
-            LineAlignment = StringAlignment.Center,
-            FormatFlags = StringFormatFlags.NoWrap,
-            Trimming = StringTrimming.EllipsisCharacter,
-        };
-        g.DrawString(e.Node.Text, font, textBrush, textRect, sfText);
+        return count > 0 ? $"📁 {leafName}  ({count})" : $"📁 {leafName}";
     }
 
     private void ShowTreeContextMenu(TreeNode? node, Point location)
@@ -446,6 +377,7 @@ class ClaudeShortcutsForm : Form
         var path = (node.Tag as string) ?? "";
         var menu = new ContextMenuStrip { BackColor = _theme.BgHeader, ForeColor = _theme.TextPrimary };
         menu.Items.Add("New subfolder…", null, (_, _) => CreateFolder(parent: path));
+        // Root is hard-coded — rename/delete hidden for it.
         if (!string.IsNullOrEmpty(path))
         {
             menu.Items.Add("Rename folder…", null, (_, _) => RenameFolder(path));
@@ -463,7 +395,6 @@ class ClaudeShortcutsForm : Form
                 : $"Folder name (under \"{parent}\")");
         if (name == null) return;
 
-        // Only accept a leaf name — no slashes — to keep the UX predictable.
         var cleaned = name.Replace('/', '_').Replace('\\', '_').Trim();
         if (string.IsNullOrEmpty(cleaned)) return;
 
@@ -471,6 +402,7 @@ class ClaudeShortcutsForm : Form
         ClaudeShortcutFolders.Add(full);
         _selectedFolder = full;
         RebuildTree();
+        UpdateNewShortcutButtonState();
         RefreshList();
     }
 
@@ -485,9 +417,7 @@ class ClaudeShortcutsForm : Form
         if (string.IsNullOrEmpty(newLeaf) || string.Equals(newLeaf, leaf, StringComparison.OrdinalIgnoreCase)) return;
         var newPath = string.IsNullOrEmpty(parent) ? newLeaf : parent + "/" + newLeaf;
 
-        // Rewrite all matching shortcuts.
         var all = ClaudeShortcutStore.Load();
-        bool changed = false;
         foreach (var s in all.ToList())
         {
             var normalized = ClaudeShortcutFolders.Normalize(s.FolderPath);
@@ -495,13 +425,12 @@ class ClaudeShortcutsForm : Form
             {
                 var nextPath = ClaudeShortcutFolders.RewritePrefix(normalized, path, newPath);
                 ClaudeShortcutStore.Update(s with { FolderPath = nextPath });
-                changed = true;
             }
         }
         ClaudeShortcutFolders.RenamePath(path, newPath);
-        _ = changed;
         _selectedFolder = newPath;
         RebuildTree();
+        UpdateNewShortcutButtonState();
         RefreshList();
     }
 
@@ -534,13 +463,9 @@ class ClaudeShortcutsForm : Form
             foreach (var s in under)
             {
                 var normalized = ClaudeShortcutFolders.Normalize(s.FolderPath);
-                // Only shortcuts whose path == this folder move up; deeper descendants
-                // follow the prefix-rewrite to stay under the parent.
-                string target;
-                if (string.Equals(normalized, path, StringComparison.OrdinalIgnoreCase))
-                    target = parent;
-                else
-                    target = ClaudeShortcutFolders.RewritePrefix(normalized, path, parent);
+                string target = string.Equals(normalized, path, StringComparison.OrdinalIgnoreCase)
+                    ? parent
+                    : ClaudeShortcutFolders.RewritePrefix(normalized, path, parent);
                 ClaudeShortcutStore.Update(s with { FolderPath = target });
             }
             ClaudeShortcutFolders.RemoveRecursive(path);
@@ -548,6 +473,7 @@ class ClaudeShortcutsForm : Form
 
         _selectedFolder = ClaudeShortcutFolders.ParentOf(path) ?? "";
         RebuildTree();
+        UpdateNewShortcutButtonState();
         RefreshList();
     }
 
@@ -568,6 +494,7 @@ class ClaudeShortcutsForm : Form
 
     private void NewShortcut()
     {
+        if (IsRootSelected) return;
         using var dlg = new ClaudeShortcutEditForm(_theme, defaultFolder: _selectedFolder);
         if (dlg.ShowDialog(this) == DialogResult.OK && dlg.Result != null)
         {
@@ -652,8 +579,6 @@ class ClaudeShortcutsForm : Form
         }
         else
         {
-            // Re-read the updated entry and push to the row so launch-count updates
-            // without a full list rebuild.
             var updated = ClaudeShortcutStore.Get(id);
             if (updated != null)
             {
@@ -684,7 +609,8 @@ class ClaudeShortcutsForm : Form
         menu.Items.Add("Duplicate", null, (_, _) => Duplicate(id));
         menu.Items.Add(new ToolStripSeparator());
 
-        // Move-to-folder submenu lists every known folder (derived + persisted).
+        // Move-to-folder submenu — lists every known non-root folder so users
+        // can re-home a shortcut without editing.
         var moveMenu = new ToolStripMenuItem("Move to folder");
         var knownFolders = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var s in ClaudeShortcutStore.Load())
@@ -693,26 +619,26 @@ class ClaudeShortcutsForm : Form
             if (!string.IsNullOrEmpty(p)) knownFolders.Add(p);
         }
         foreach (var f in ClaudeShortcutFolders.Load())
-            knownFolders.Add(ClaudeShortcutFolders.Normalize(f));
-
-        moveMenu.DropDownItems.Add("(Root)", null, (_, _) => MoveShortcutToFolder(id, ""));
-        if (knownFolders.Count > 0)
-            moveMenu.DropDownItems.Add(new ToolStripSeparator());
-        foreach (var folder in knownFolders)
         {
-            string f = folder;
-            var item = new ToolStripMenuItem(f) { Checked = string.Equals(cur.FolderPath, f, StringComparison.OrdinalIgnoreCase) };
-            item.Click += (_, _) => MoveShortcutToFolder(id, f);
-            moveMenu.DropDownItems.Add(item);
+            var p = ClaudeShortcutFolders.Normalize(f);
+            if (!string.IsNullOrEmpty(p)) knownFolders.Add(p);
         }
-        moveMenu.DropDownItems.Add(new ToolStripSeparator());
-        moveMenu.DropDownItems.Add("New folder…", null, (_, _) =>
+
+        if (knownFolders.Count == 0)
         {
-            var name = TextInputDialog.Prompt(this, _theme, "New folder",
-                "Folder path (e.g. \"Work/Backend\")");
-            if (string.IsNullOrWhiteSpace(name)) return;
-            MoveShortcutToFolder(id, name);
-        });
+            var none = new ToolStripMenuItem("(no folders yet — create one first)") { Enabled = false };
+            moveMenu.DropDownItems.Add(none);
+        }
+        else
+        {
+            foreach (var folder in knownFolders)
+            {
+                string f = folder;
+                var item = new ToolStripMenuItem(f) { Checked = string.Equals(cur.FolderPath, f, StringComparison.OrdinalIgnoreCase) };
+                item.Click += (_, _) => MoveShortcutToFolder(id, f);
+                moveMenu.DropDownItems.Add(item);
+            }
+        }
         menu.Items.Add(moveMenu);
 
         menu.Items.Add(new ToolStripSeparator());
@@ -724,7 +650,7 @@ class ClaudeShortcutsForm : Form
 
     private void OnKey(object? sender, KeyEventArgs e)
     {
-        if (e.Control && e.KeyCode == Keys.N) { NewShortcut(); e.Handled = true; return; }
+        if (e.Control && e.KeyCode == Keys.N && !IsRootSelected) { NewShortcut(); e.Handled = true; return; }
         if (e.KeyCode == Keys.Escape && _expandedId != null && ActiveControl is not TextBox)
         {
             _expandedId = null;
@@ -880,9 +806,6 @@ class ClaudeShortcutRow : Panel
             g.DrawString(name, titleFont, tbrush, new RectangleF(textLeft, 10, textRight - textLeft, 24), sf);
         }
 
-        // Admin tag — solid fill + white uppercase text, drawn to the right of
-        // the name. Rendered as a flat tag (minimal corner rounding) rather than
-        // a full pill so it reads as a label, not a bubble.
         if (_shortcut.RequireAdmin)
         {
             using var tf = new Font("Segoe UI Semibold", 8f, FontStyle.Bold);
@@ -906,7 +829,6 @@ class ClaudeShortcutRow : Panel
             }
         }
 
-        // Working directory (second line)
         using (var subFont = new Font("Segoe UI", 9f))
         using (var subBrush = new SolidBrush(_theme.TextSecondary))
         using (var sf = new StringFormat { Trimming = StringTrimming.EllipsisPath, FormatFlags = StringFormatFlags.NoWrap })
@@ -915,7 +837,6 @@ class ClaudeShortcutRow : Panel
                 subFont, subBrush, new RectangleF(textLeft, 36, textRight - textLeft, 18), sf);
         }
 
-        // Third line: args + launcher mode
         string launcher = _shortcut.LauncherMode == ClaudeLauncherMode.WindowsTerminal
             ? (string.IsNullOrEmpty(_shortcut.WtProfile) ? "wt" : $"wt · {_shortcut.WtProfile}")
             : "cmd";

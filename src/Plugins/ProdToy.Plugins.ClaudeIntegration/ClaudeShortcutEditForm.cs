@@ -7,13 +7,13 @@ class ClaudeShortcutEditForm : Form
 {
     private readonly PluginTheme _theme;
     private readonly ClaudeShortcut? _existing;
+    private readonly string _folderPath;
 
     private readonly TextBox _nameBox;
     private readonly TextBox _dirBox;
     private readonly TextBox _argsBox;
     private readonly ComboBox _profileCombo;
     private readonly ComboBox _launcherCombo;
-    private readonly ComboBox _folderCombo;
     private readonly ToggleSwitch _adminToggle;
     private readonly TextBox _notesBox;
     private readonly Label _validationLabel;
@@ -27,6 +27,11 @@ class ClaudeShortcutEditForm : Form
     {
         _theme = theme;
         _existing = existing;
+        // On edit, preserve the shortcut's current folder. On create, take the
+        // folder from the tree selection passed by the parent form (required —
+        // the parent gates "+ New Shortcut" on a non-root selection).
+        _folderPath = ClaudeShortcutFolders.Normalize(
+            existing?.FolderPath ?? defaultFolder ?? "");
         bool isEdit = existing != null;
 
         Text = isEdit ? "Edit Shortcut" : "New Shortcut";
@@ -57,6 +62,20 @@ class ClaudeShortcutEditForm : Form
             BackColor = Color.Transparent,
         };
         Controls.Add(header);
+
+        // Folder readout — the shortcut's folder is chosen by tree selection,
+        // not editable here. Show "📁 <path>" next to the header so the user
+        // can confirm where it'll be saved.
+        var folderReadout = new Label
+        {
+            Text = string.IsNullOrEmpty(_folderPath) ? "📁 (no folder)" : $"📁 {_folderPath}",
+            Font = new Font("Segoe UI", 9.5f, FontStyle.Italic),
+            ForeColor = theme.TextSecondary,
+            AutoSize = true,
+            Location = new Point(pad + 180, y + 8),
+            BackColor = Color.Transparent,
+        };
+        Controls.Add(folderReadout);
         y += 40;
 
         y = AddSection("PROJECT", y);
@@ -64,33 +83,6 @@ class ClaudeShortcutEditForm : Form
         AddLabel("Name", pad, y);
         _nameBox = MakeTextBox(inputX, y, inputW);
         _nameBox.Text = existing?.Name ?? "";
-        y += 34;
-
-        AddLabel("Folder", pad, y);
-        _folderCombo = new ComboBox
-        {
-            Font = new Font("Segoe UI", 10f),
-            BackColor = theme.BgHeader,
-            ForeColor = theme.TextPrimary,
-            FlatStyle = FlatStyle.Flat,
-            Size = new Size(inputW, 26),
-            Location = new Point(inputX, y),
-            DropDownStyle = ComboBoxStyle.DropDown,
-        };
-        var knownFolders = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var s in ClaudeShortcutStore.Load())
-        {
-            var p = ClaudeShortcutFolders.Normalize(s.FolderPath);
-            if (!string.IsNullOrEmpty(p)) knownFolders.Add(p);
-        }
-        foreach (var f in ClaudeShortcutFolders.Load())
-            knownFolders.Add(ClaudeShortcutFolders.Normalize(f));
-        _folderCombo.Items.Add(""); // root
-        foreach (var f in knownFolders) _folderCombo.Items.Add(f);
-        _folderCombo.Text = existing != null
-            ? ClaudeShortcutFolders.Normalize(existing.FolderPath)
-            : (defaultFolder ?? "");
-        Controls.Add(_folderCombo);
         y += 34;
 
         AddLabel("Working directory", pad, y);
@@ -387,13 +379,6 @@ class ClaudeShortcutEditForm : Form
             _validationLabel.Text = "Name is required.";
             return;
         }
-        var folderNormalized = ClaudeShortcutFolders.Normalize(_folderCombo.Text);
-        if (string.IsNullOrEmpty(folderNormalized))
-        {
-            _validationLabel.Text = "Folder is required — pick an existing one or type a new path.";
-            _folderCombo.Focus();
-            return;
-        }
         if (string.IsNullOrWhiteSpace(_dirBox.Text))
         {
             _validationLabel.Text = "Working directory is required.";
@@ -409,8 +394,6 @@ class ClaudeShortcutEditForm : Form
             ? ClaudeLauncherMode.CmdWindow
             : ClaudeLauncherMode.WindowsTerminal;
 
-        var normalizedFolder = ClaudeShortcutFolders.Normalize(_folderCombo.Text);
-
         Result = new ClaudeShortcut
         {
             Id = _existing?.Id ?? Guid.NewGuid().ToString("N"),
@@ -421,16 +404,12 @@ class ClaudeShortcutEditForm : Form
             LauncherMode = launcher,
             RequireAdmin = _adminToggle.Checked,
             Notes = _notesBox.Text,
-            FolderPath = normalizedFolder,
+            FolderPath = _folderPath,
             CreatedAt = _existing?.CreatedAt ?? DateTime.Now,
             UpdatedAt = _existing != null ? DateTime.Now : null,
             LastLaunchedAt = _existing?.LastLaunchedAt,
             LaunchCount = _existing?.LaunchCount ?? 0,
         };
-
-        // Ensure the folder sticks even if the user types a new path.
-        if (!string.IsNullOrEmpty(normalizedFolder))
-            ClaudeShortcutFolders.Add(normalizedFolder);
 
         DialogResult = DialogResult.OK;
         Close();
