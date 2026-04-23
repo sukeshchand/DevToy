@@ -404,7 +404,7 @@ sealed class ChatPopupForm : Form, IPluginPopup
     /// notifications are disabled, snoozed, or the user chose tray-balloon mode.
     /// The Claude plugin's handler calls this directly; there is no generic
     /// notification facility any more.</summary>
-    public void ShowPopup(string title, string message, string type, string sessionId = "", string cwd = "")
+    public void ShowPopup(string title, string message, string type, string sessionId = "", string cwd = "", string machineName = "")
     {
         _lastMessage = message;
         _lastType = type;
@@ -478,7 +478,7 @@ sealed class ChatPopupForm : Form, IPluginPopup
             _filterValue = "";
         }
 
-        DisplayMessage(title, message, type, question, sessionId, cwd, questionTime, DateTime.Now);
+        DisplayMessage(title, message, type, question, sessionId, cwd, questionTime, DateTime.Now, machineName);
 
         // Fresh funny quote + typewriter animation.
         if (_showQuotes)
@@ -664,7 +664,8 @@ sealed class ChatPopupForm : Form, IPluginPopup
 
     private void DisplayMessage(string title, string message, string type,
         string question = "", string sessionId = "", string cwd = "",
-        DateTime questionTime = default, DateTime responseTime = default)
+        DateTime questionTime = default, DateTime responseTime = default,
+        string machineName = "")
     {
         _lastMessage = message;
         _lastType = type;
@@ -690,6 +691,8 @@ sealed class ChatPopupForm : Form, IPluginPopup
         string firstLine = string.IsNullOrEmpty(sessionId)
             ? "Claude notification"
             : $"Session {(sessionId.Length > 8 ? sessionId[..8] : sessionId)}";
+        if (!string.IsNullOrEmpty(machineName))
+            firstLine += $" · {machineName}";
         string secondLine = $"{dateText} \u00B7 {relative}";
         _subtitleLabel.Text = firstLine + "\n" + secondLine;
 
@@ -940,7 +943,7 @@ sealed class ChatPopupForm : Form, IPluginPopup
         if (entry != null)
         {
             var qts = entry.QuestionTimestamp == default ? entry.Timestamp : entry.QuestionTimestamp;
-            DisplayMessage(entry.Title, entry.Message, entry.Type, entry.Question, entry.SessionId, entry.Cwd, qts, entry.Timestamp);
+            DisplayMessage(entry.Title, entry.Message, entry.Type, entry.Question, entry.SessionId, entry.Cwd, qts, entry.Timestamp, entry.MachineName);
         }
     }
 
@@ -969,7 +972,7 @@ sealed class ChatPopupForm : Form, IPluginPopup
                     if (entry != null)
                     {
                         var qts = entry.QuestionTimestamp == default ? entry.Timestamp : entry.QuestionTimestamp;
-                        DisplayMessage(entry.Title, entry.Message, entry.Type, entry.Question, entry.SessionId, entry.Cwd, qts, entry.Timestamp);
+                        DisplayMessage(entry.Title, entry.Message, entry.Type, entry.Question, entry.SessionId, entry.Cwd, qts, entry.Timestamp, entry.MachineName);
                     }
                 }
                 else

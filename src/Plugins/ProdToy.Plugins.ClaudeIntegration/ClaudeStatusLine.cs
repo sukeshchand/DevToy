@@ -25,8 +25,11 @@ static class ClaudeStatusLine
     // so cleanup on this machine can remove pre-upgrade files it owns.
     private static Regex? _scriptNameRegex;
     private static Regex ScriptNameRegex => _scriptNameRegex ??= new Regex(
-        $@"^context-bar(?:--{Regex.Escape(ClaudePaths.MachineId)})?(?:-v(\d+))?\.ps1$",
+        $@"^context-bar(?:--{Regex.Escape(ClaudePaths.EnvId)})?(?:-v(\d+))?\.ps1$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>Called by ClaudePaths.SetEnvId to invalidate the cached regex when the env id changes.</summary>
+    internal static void ResetScriptNameRegex() => _scriptNameRegex = null;
 
     /// <summary>
     /// Extract the status-line script to the plugin's scripts dir and write the

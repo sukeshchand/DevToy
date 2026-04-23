@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ProdToy;
 
@@ -72,6 +73,15 @@ static class AppPaths
     /// <summary>Temporary working dir for updates and other short-lived state: Root\tmp\</summary>
     public static string TmpDir { get; } = Path.Combine(Root, "tmp");
 
+    /// <summary>Machine-local launch settings (env id, etc.): Root\launchSettings.json</summary>
+    public static string LaunchSettingsFile { get; } = Path.Combine(Root, "launchSettings.json");
+
+    /// <summary>
+    /// Unique identifier for this installation environment. Read from launchSettings.json
+    /// (written by the installer). Empty string when not yet set.
+    /// </summary>
+    public static string EnvId { get; } = ReadEnvId();
+
     /// <summary>True when DataDir is currently redirected away from the default.</summary>
     public static bool IsDataDirRedirected =>
         !string.Equals(
@@ -128,6 +138,19 @@ static class AppPaths
             // we must never block startup on a bad sync config.
             return DefaultDataDir;
         }
+    }
+
+    private static string ReadEnvId()
+    {
+        try
+        {
+            if (!File.Exists(LaunchSettingsFile)) return "";
+            var root = JsonNode.Parse(File.ReadAllText(LaunchSettingsFile));
+            var id = root?["envId"]?.GetValue<string>();
+            if (!string.IsNullOrWhiteSpace(id)) return id;
+        }
+        catch { }
+        return "";
     }
 
     private sealed class DataLocationOverride

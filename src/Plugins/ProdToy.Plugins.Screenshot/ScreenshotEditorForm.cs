@@ -360,7 +360,7 @@ class ScreenshotEditorForm : Form
             {
                 Filter = "PNG Image|*.png|JPEG Image|*.jpg|Bitmap|*.bmp",
                 DefaultExt = "png",
-                FileName = $"screenshot_{DateTime.Now:yyyy-MM-dd_HHmmss}",
+                FileName = ScreenshotPaths.NewScreenshotBaseName(),
                 InitialDirectory = ScreenshotPaths.ScreenshotsDir,
             };
             if (dlg.ShowDialog(this) == DialogResult.OK)
@@ -583,7 +583,7 @@ class ScreenshotEditorForm : Form
     {
         try
         {
-            string editId = $"screenshot_{DateTime.Now:yyyy-MM-dd_HHmmss}";
+            string editId = ScreenshotPaths.NewScreenshotBaseName();
             session.EditId = editId;
             string dir = session.EditDir;
             Directory.CreateDirectory(dir);

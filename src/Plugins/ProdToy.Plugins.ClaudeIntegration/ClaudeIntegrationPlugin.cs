@@ -89,7 +89,9 @@ public partial class ClaudeIntegrationPlugin : IPlugin, IDoctor
 
         _chatHistory = new ChatHistory(
             context.DataDirectory,
-            () => context.LoadSettings<ClaudePluginSettings>().HistoryEnabled);
+            () => context.LoadSettings<ClaudePluginSettings>().HistoryEnabled,
+            envId: ClaudePaths.EnvId,
+            machineName: Environment.MachineName);
 
         _telegram = new TelegramNotifier(context);
 
@@ -130,7 +132,7 @@ public partial class ClaudeIntegrationPlugin : IPlugin, IDoctor
                 var popup = _chatPopup;
                 popup.BeginInvoke(() =>
                 {
-                    popup.ShowPopup(title, message, type, sessionId, cwd);
+                    popup.ShowPopup(title, message, type, sessionId, cwd, Environment.MachineName);
                 });
             }
 
@@ -342,7 +344,7 @@ public partial class ClaudeIntegrationPlugin : IPlugin, IDoctor
             var latest = _chatHistory.GetLatest();
             if (latest != null)
             {
-                _chatPopup!.ShowPopup(latest.Title, latest.Message, latest.Type, latest.SessionId, latest.Cwd);
+                _chatPopup!.ShowPopup(latest.Title, latest.Message, latest.Type, latest.SessionId, latest.Cwd, latest.MachineName);
             }
             else
             {

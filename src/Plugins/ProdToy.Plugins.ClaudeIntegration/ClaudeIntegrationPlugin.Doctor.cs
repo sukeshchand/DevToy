@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ProdToy.Sdk;
 
 namespace ProdToy.Plugins.ClaudeIntegration;
@@ -21,14 +22,61 @@ public partial class ClaudeIntegrationPlugin
             fix: () => { Directory.CreateDirectory(ClaudePaths.ScriptsDir); Install(_context); },
             requiresRestart: true));
 
-        // Status-line script: context-bar--{machineId}-v{n}.ps1 on the current
-        // machine. Other machines' qualified scripts in a synced folder are
-        // ignored here — we only need to know THIS machine has one.
+        // ---- Environment ID ----
+        // launchSettings.json holds a stable envId written by the installer.
+        // Read from disk directly (not the cached static) so the check reflects
+        // the actual file state and the fix can apply in-session without restart.
+        string launchSettingsPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".prod-toy", "launchSettings.json");
+        string? diskEnvId = null;
+        if (File.Exists(launchSettingsPath))
+        {
+            try
+            {
+                var jn = JsonNode.Parse(File.ReadAllText(launchSettingsPath));
+                diskEnvId = jn?["envId"]?.GetValue<string>();
+            }
+            catch { }
+        }
+
+        bool envIdConfigured = !string.IsNullOrWhiteSpace(diskEnvId);
+        if (envIdConfigured)
+        {
+            checks.Add(new DoctorCheck
+            {
+                Source = DoctorSource,
+                Title = "Environment ID configured",
+                Passed = true,
+                Details = $"envId: {diskEnvId}",
+            });
+        }
+        else
+        {
+            checks.Add(new DoctorCheck
+            {
+                Source = DoctorSource,
+                Title = "Environment ID not configured",
+                Passed = false,
+                Severity = DoctorSeverity.Warning,
+                Details = "launchSettings.json is missing or has no envId. Fix generates an ID and updates the status-line script immediately.",
+                Fix = () =>
+                {
+                    string newId = Guid.NewGuid().ToString("N")[..8];
+                    WriteEnvId(newId);
+                    ClaudePaths.SetEnvId(newId);
+                    Install(_context);
+                },
+            });
+        }
+
+        // ---- Status-line script: must be env-id qualified ----
+        // Search for the script using the current EnvId (which may have just been
+        // updated by SetEnvId above if the user ran the envId fix).
         string? statusScriptFound = null;
         if (Directory.Exists(ClaudePaths.ScriptsDir))
         {
             statusScriptFound = Directory
-                .EnumerateFiles(ClaudePaths.ScriptsDir, $"context-bar--{ClaudePaths.MachineId}-v*.ps1")
+                .EnumerateFiles(ClaudePaths.ScriptsDir, $"context-bar--{ClaudePaths.EnvId}-v*.ps1")
                 .FirstOrDefault();
         }
         if (statusScriptFound != null)
@@ -46,13 +94,52 @@ public partial class ClaudeIntegrationPlugin
             checks.Add(new DoctorCheck
             {
                 Source = DoctorSource,
-                Title = $"Status-line script (context-bar--{ClaudePaths.MachineId}-v*.ps1) missing",
+                Title = $"Status-line script (context-bar--{ClaudePaths.EnvId}-v*.ps1) missing",
                 Passed = false,
                 Severity = DoctorSeverity.Error,
                 Details = $"Expected under {ClaudePaths.ScriptsDir}. Click Fix to re-extract from embedded resources.",
                 Fix = () => Install(_context),
                 RequiresRestart = true,
             });
+        }
+
+        // ---- Migration: old machine-name script detected ----
+        // When envId is a proper hex id (different from the sanitized machine
+        // name), an old machine-name script means Claude settings.json still
+        // points to the wrong path. Fix bumps the version under the envId so
+        // Claude sees the new filename immediately — no restart needed.
+        if (envIdConfigured && diskEnvId != ClaudePaths.MachineId && Directory.Exists(ClaudePaths.ScriptsDir))
+        {
+            string? machineScript = Directory
+                .EnumerateFiles(ClaudePaths.ScriptsDir, $"context-bar--{ClaudePaths.MachineId}-v*.ps1")
+                .FirstOrDefault();
+
+            if (machineScript != null && statusScriptFound == null)
+            {
+                string capturedId = diskEnvId!;
+                checks.Add(new DoctorCheck
+                {
+                    Source = DoctorSource,
+                    Title = "Status-line script uses old machine name (migration needed)",
+                    Passed = false,
+                    Severity = DoctorSeverity.Warning,
+                    Details = $"Found: {Path.GetFileName(machineScript)}\n"
+                            + $"Expected env-id qualified: context-bar--{diskEnvId}-v*.ps1\n"
+                            + "Fix renames the script and updates Claude settings.json.",
+                    Fix = () =>
+                    {
+                        ClaudePaths.SetEnvId(capturedId);
+                        var s = _context.LoadSettings<ClaudePluginSettings>();
+                        var installs = s.ClaudeConfigDirs
+                            .Where(Directory.Exists)
+                            .Select(d => new ClaudeInstall(d))
+                            .ToList();
+                        if (installs.Count == 0) installs = ClaudeInstallDiscovery.Scan();
+                        string pluginSettingsPath = Path.Combine(_context.DataDirectory, "settings.json");
+                        ClaudeStatusLine.BumpScriptVersion(installs, pluginSettingsPath);
+                    },
+                });
+            }
         }
 
         // Show-ProdToy hook script.
@@ -94,83 +181,63 @@ public partial class ClaudeIntegrationPlugin
         checks.Add(JsonCheck(Path.Combine(dataDir, "settings.json"),
             "Plugin settings is valid JSON", requiresRestart: true));
 
-        // Registered Claude installs.
+        // Claude installs — always live-scan so Doctor reflects this machine only,
+        // regardless of what's stored in ClaudeConfigDirs (which may contain paths
+        // from another machine sharing a synced data folder).
         try
         {
-            var settings = _context.LoadSettings<ClaudePluginSettings>();
-            var dirs = settings.ClaudeConfigDirs ?? new List<string>();
+            var scanned = ClaudeInstallDiscovery.Scan();
 
-            if (dirs.Count == 0)
+            if (scanned.Count == 0)
             {
                 checks.Add(new DoctorCheck
                 {
                     Source = DoctorSource,
-                    Title = "No Claude CLI installs registered",
+                    Title = "No Claude CLI installs found on this machine",
                     Passed = false,
                     Severity = DoctorSeverity.Info,
-                    Details = "Hooks/status line are not wired into any Claude install. Click Fix to scan and register.",
+                    Details = "No directory containing 'claude' with a valid settings.json was found under %USERPROFILE%, %APPDATA%, or %LOCALAPPDATA%. Click Fix to scan and register once Claude CLI is installed.",
                     Fix = () => Install(_context),
                     RequiresRestart = true,
                 });
             }
             else
             {
-                foreach (var dir in dirs)
+                foreach (var install in scanned)
                 {
-                    if (Directory.Exists(dir))
+                    checks.Add(new DoctorCheck
                     {
-                        checks.Add(new DoctorCheck
-                        {
-                            Source = DoctorSource,
-                            Title = "Registered Claude install present",
-                            Passed = true,
-                            Details = dir,
-                        });
+                        Source = DoctorSource,
+                        Title = "Claude CLI install found",
+                        Passed = true,
+                        Details = install.ConfigDir,
+                    });
 
-                        var claudeSettings = Path.Combine(dir, "settings.json");
-                        if (File.Exists(claudeSettings))
-                        {
-                            try
-                            {
-                                var txt = File.ReadAllText(claudeSettings);
-                                if (!string.IsNullOrWhiteSpace(txt)) JsonDocument.Parse(txt);
-                                checks.Add(new DoctorCheck
-                                {
-                                    Source = DoctorSource,
-                                    Title = "Claude CLI settings.json is valid JSON",
-                                    Passed = true,
-                                    Details = claudeSettings,
-                                });
-                            }
-                            catch (Exception ex)
-                            {
-                                checks.Add(new DoctorCheck
-                                {
-                                    Source = DoctorSource,
-                                    Title = "Claude CLI settings.json is corrupted",
-                                    Passed = false,
-                                    Severity = DoctorSeverity.Error,
-                                    Details = $"{claudeSettings}\n{ex.Message}\n(Not auto-fixed — open the file manually or reinstall Claude CLI.)",
-                                });
-                            }
-                        }
-                    }
-                    else
+                    if (File.Exists(install.SettingsFile))
                     {
-                        checks.Add(new DoctorCheck
+                        try
                         {
-                            Source = DoctorSource,
-                            Title = "Registered Claude install no longer exists",
-                            Passed = false,
-                            Severity = DoctorSeverity.Warning,
-                            Details = dir + "\nClick Fix to remove it from the integration list.",
-                            Fix = () =>
+                            var txt = File.ReadAllText(install.SettingsFile);
+                            if (!string.IsNullOrWhiteSpace(txt)) JsonDocument.Parse(txt);
+                            checks.Add(new DoctorCheck
                             {
-                                var s = _context.LoadSettings<ClaudePluginSettings>();
-                                var pruned = (s.ClaudeConfigDirs ?? new List<string>()).Where(Directory.Exists).ToList();
-                                _context.SaveSettings(s with { ClaudeConfigDirs = pruned });
-                            },
-                        });
+                                Source = DoctorSource,
+                                Title = "Claude CLI settings.json is valid JSON",
+                                Passed = true,
+                                Details = install.SettingsFile,
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            checks.Add(new DoctorCheck
+                            {
+                                Source = DoctorSource,
+                                Title = "Claude CLI settings.json is corrupted",
+                                Passed = false,
+                                Severity = DoctorSeverity.Error,
+                                Details = $"{install.SettingsFile}\n{ex.Message}\n(Not auto-fixed — open the file manually or reinstall Claude CLI.)",
+                            });
+                        }
                     }
                 }
             }
@@ -285,6 +352,34 @@ public partial class ClaudeIntegrationPlugin
         }
 
         return checks;
+    }
+
+    private static void WriteEnvId(string envId)
+    {
+        try
+        {
+            string root = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".prod-toy");
+            string launchSettingsPath = Path.Combine(root, "launchSettings.json");
+            var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+            var launchSettings = new JsonObject { ["envId"] = envId };
+            File.WriteAllText(launchSettingsPath, launchSettings.ToJsonString(opts));
+
+            string dataDir = Path.Combine(root, "data");
+            Directory.CreateDirectory(dataDir);
+            var config = new JsonObject
+            {
+                ["envId"]       = envId,
+                ["machineName"] = Environment.MachineName,
+                ["installPath"] = root,
+                ["installedAt"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+            };
+            File.WriteAllText(Path.Combine(dataDir, $"env_{envId}.config"), config.ToJsonString(opts));
+        }
+        catch (Exception ex)
+        {
+            PluginLog.Error("WriteEnvId failed", ex);
+        }
     }
 
     private DoctorCheck DirCheck(string label, string path, DoctorSeverity severity, Action? fix = null, bool requiresRestart = false)
