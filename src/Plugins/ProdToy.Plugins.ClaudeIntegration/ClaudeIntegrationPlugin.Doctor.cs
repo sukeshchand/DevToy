@@ -21,11 +21,15 @@ public partial class ClaudeIntegrationPlugin
             fix: () => { Directory.CreateDirectory(ClaudePaths.ScriptsDir); Install(_context); },
             requiresRestart: true));
 
-        // Status-line script (context-bar.ps1 or context-bar-v{n}.ps1).
+        // Status-line script: context-bar--{machineId}-v{n}.ps1 on the current
+        // machine. Other machines' qualified scripts in a synced folder are
+        // ignored here — we only need to know THIS machine has one.
         string? statusScriptFound = null;
         if (Directory.Exists(ClaudePaths.ScriptsDir))
         {
-            statusScriptFound = Directory.EnumerateFiles(ClaudePaths.ScriptsDir, "context-bar*.ps1").FirstOrDefault();
+            statusScriptFound = Directory
+                .EnumerateFiles(ClaudePaths.ScriptsDir, $"context-bar--{ClaudePaths.MachineId}-v*.ps1")
+                .FirstOrDefault();
         }
         if (statusScriptFound != null)
         {
@@ -42,7 +46,7 @@ public partial class ClaudeIntegrationPlugin
             checks.Add(new DoctorCheck
             {
                 Source = DoctorSource,
-                Title = "Status-line script (context-bar.ps1) missing",
+                Title = $"Status-line script (context-bar--{ClaudePaths.MachineId}-v*.ps1) missing",
                 Passed = false,
                 Severity = DoctorSeverity.Error,
                 Details = $"Expected under {ClaudePaths.ScriptsDir}. Click Fix to re-extract from embedded resources.",

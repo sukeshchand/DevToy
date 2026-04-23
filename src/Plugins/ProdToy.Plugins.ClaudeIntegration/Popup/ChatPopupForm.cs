@@ -82,7 +82,7 @@ sealed class ChatPopupForm : Form, IPluginPopup
     private int _historyIndex = -1;   // -1 = live/current message
     private bool _viewingHistory;
     private string _currentSessionId = "";
-    private FilterMode _filterMode = FilterMode.Session;
+    private FilterMode _filterMode = FilterMode.Cwd;
     private string _filterValue = "";
     private List<HistoryIndex>? _filteredIndex;
     private DateTime _selectedDate = DateTime.Today;
@@ -454,9 +454,20 @@ sealed class ChatPopupForm : Form, IPluginPopup
             if (string.IsNullOrEmpty(cwd)) cwd = latest?.Cwd ?? "";
         }
 
-        if (!string.IsNullOrEmpty(sessionId))
+        // Default grouping is by working folder — a user typically works across
+        // several short-lived sessions inside the same repo, so "folder" groups
+        // their recent notifications more usefully than "session". Session is
+        // the fallback only when no cwd is available on the incoming event.
+        if (!string.IsNullOrEmpty(sessionId)) _currentSessionId = sessionId;
+
+        if (!string.IsNullOrEmpty(cwd))
         {
-            _currentSessionId = sessionId;
+            _filterMode = FilterMode.Cwd;
+            _filterValue = cwd;
+            _filteredIndex = _history.FilterByCwd(_selectedDate, cwd);
+        }
+        else if (!string.IsNullOrEmpty(sessionId))
+        {
             _filterMode = FilterMode.Session;
             _filterValue = sessionId;
             _filteredIndex = _history.FilterBySession(_selectedDate, sessionId);
