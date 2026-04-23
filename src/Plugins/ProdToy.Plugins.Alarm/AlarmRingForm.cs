@@ -15,6 +15,28 @@ class AlarmRingForm : Form
     {
         _alarm = alarm;
 
+        // Defensive: if the host passed a null theme, fall back to hard-coded
+        // dark colors so the form at least renders (blank controls on black is
+        // better than an NRE that silently swallows the whole test-trigger flow).
+        if (theme == null)
+        {
+            PluginLog.Warn("AlarmRingForm: theme was null, falling back to defaults");
+            theme = new PluginTheme(
+                Name: "fallback",
+                BgDark:        Color.FromArgb(0x1e, 0x1e, 0x24),
+                BgHeader:      Color.FromArgb(0x2a, 0x2a, 0x32),
+                Primary:       Color.FromArgb(0x5f, 0xc7, 0x6e),
+                PrimaryLight:  Color.FromArgb(0x7f, 0xd7, 0x8e),
+                PrimaryDim:    Color.FromArgb(0x3a, 0x5a, 0x4a),
+                TextPrimary:   Color.FromArgb(0xe6, 0xe6, 0xee),
+                TextSecondary: Color.FromArgb(0x9a, 0x9a, 0xa8),
+                Border:        Color.FromArgb(0x3a, 0x3a, 0x44),
+                SuccessColor:  Color.FromArgb(0x5f, 0xc7, 0x6e),
+                ErrorColor:    Color.FromArgb(0xe7, 0x48, 0x56),
+                SuccessBg:     Color.FromArgb(0x24, 0x3a, 0x2a),
+                ErrorBg:       Color.FromArgb(0x3a, 0x24, 0x24));
+        }
+
         Text = "Alarm";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -26,7 +48,8 @@ class AlarmRingForm : Form
         BackColor = theme.BgDark;
         ForeColor = theme.TextPrimary;
         Font = new Font("Segoe UI", 10f);
-        Icon = IconHelper.CreateAppIcon(theme.Primary);
+        try { Icon = IconHelper.CreateAppIcon(theme.Primary); }
+        catch (Exception ex) { PluginLog.Warn($"AlarmRingForm: CreateAppIcon failed: {ex.Message}"); }
         AutoScaleMode = AutoScaleMode.Dpi;
 
         int pad = 24;
@@ -175,10 +198,15 @@ class AlarmRingForm : Form
         {
             TopMost = true;
             Activate();
-            AlarmNativeMethods.SetForegroundWindow(Handle);
+            try { AlarmNativeMethods.SetForegroundWindow(Handle); }
+            catch (Exception ex) { PluginLog.Warn($"SetForegroundWindow failed: {ex.Message}"); }
         };
 
-        FormClosed += (_, _) => { _autoCloseTimer.Stop(); _autoCloseTimer.Dispose(); };
+        FormClosed += (_, _) =>
+        {
+            _autoCloseTimer.Stop();
+            _autoCloseTimer.Dispose();
+        };
 
         if (!string.IsNullOrEmpty(globalFont) && globalFont != "Segoe UI")
         {
@@ -188,7 +216,10 @@ class AlarmRingForm : Form
                 foreach (Control c in Controls)
                     ApplyFontRecursive(c, globalFont);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                PluginLog.Warn($"AlarmRingForm: global font '{globalFont}' apply failed: {ex.Message}");
+            }
         }
     }
 

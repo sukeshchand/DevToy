@@ -42,7 +42,14 @@ static class AlarmScheduler
 
     public static void TestTrigger(AlarmEntry alarm)
     {
-        AlarmTriggered?.Invoke(alarm);
+        try
+        {
+            AlarmTriggered?.Invoke(alarm);
+        }
+        catch (Exception ex)
+        {
+            PluginLog.Error("AlarmScheduler.TestTrigger raised", ex);
+        }
     }
 
     private static void Tick()
