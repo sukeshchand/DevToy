@@ -28,20 +28,31 @@ static class AlarmNotifier
     {
         if (_host == null) return;
 
-        // Fire-and-forget on the thread pool so the scheduler's timer thread is
-        // never blocked waiting on the UI thread. If the UI thread is busy (e.g.
-        // WebView2 prewarm still running right after an app update), the Invoke
-        // call queues but the scheduler proceeds to its next tick immediately.
-        ThreadPool.QueueUserWorkItem(_ =>
+        // Marshal to UI thread, then defer the actual form-creation via a
+        // WinForms Timer. Two reasons:
+        //
+        //   1. The scheduler's Tick runs on a threadpool thread, so we must
+        //      cross over to the UI thread to touch WinForms at all.
+        //
+        //   2. Test-trigger is invoked from the context menu on the alarm row,
+        //      which means the call stack at Invoke time is still inside the
+        //      ToolStrip's nested modal message loop. Creating and Show()-ing
+        //      a form inside that loop leaves it visible-but-unresponsive
+        //      (Shown/Activated events never fire, input isn't routed). A
+        //      Timer.Tick with a short delay fires from the *outer* message
+        //      pump — by the time it runs, the menu has fully torn down and
+        //      the ring form is created in a clean top-level pump context.
+        _host.InvokeOnUI(() =>
         {
-            try
+            var deferTimer = new System.Windows.Forms.Timer { Interval = 100 };
+            deferTimer.Tick += (_, _) =>
             {
-                _host.InvokeOnUI(() => ShowAlarm(alarm));
-            }
-            catch (Exception ex)
-            {
-                PluginLog.Error("AlarmNotifier dispatch failed", ex);
-            }
+                deferTimer.Stop();
+                deferTimer.Dispose();
+                try { ShowAlarm(alarm); }
+                catch (Exception ex) { PluginLog.Error("Deferred ShowAlarm failed", ex); }
+            };
+            deferTimer.Start();
         });
     }
 
