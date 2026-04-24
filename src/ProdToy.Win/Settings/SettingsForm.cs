@@ -1353,15 +1353,18 @@ class SettingsForm : Form
     {
         string title = resetToDefault ? "Reset to default data folder?" : "Move data folder?";
         string message =
-            $"Copy everything from\n  {source}\nto\n  {dest}\n\n" +
-            "Existing files at the destination will be overwritten.\n" +
-            "ProdToy will restart to apply the change.\n\nContinue?";
+            $"Do you want to copy the files into the new directory?\n\n" +
+            $"From:\n  {source}\nTo:\n  {dest}\n\n" +
+            "Yes — copy existing files (overwriting any at the destination), then restart.\n" +
+            "No — switch to the new folder without copying, then restart.\n" +
+            "Cancel — keep the current data folder.";
         var confirm = MessageBox.Show(this, message, title,
-            MessageBoxButtons.OKCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
-        if (confirm != DialogResult.OK) return;
+            MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button3);
+        if (confirm == DialogResult.Cancel) return;
 
-        using (var dlg = new DataMigrationDialog(theme, source, dest))
+        if (confirm == DialogResult.Yes)
         {
+            using var dlg = new DataMigrationDialog(theme, source, dest);
             dlg.ShowDialog(this);
             if (!dlg.Success)
             {
@@ -1374,7 +1377,9 @@ class SettingsForm : Form
         AppPaths.SetDataDir(resetToDefault ? null : dest);
 
         statusLabel.ForeColor = theme.SuccessColor;
-        statusLabel.Text = "Copy complete. Restarting ProdToy...";
+        statusLabel.Text = confirm == DialogResult.Yes
+            ? "Copy complete. Restarting ProdToy..."
+            : "Data folder switched. Restarting ProdToy...";
         Application.DoEvents();
 
         // Application.Restart() is cleanest here — it spawns a new process and

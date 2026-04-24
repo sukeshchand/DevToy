@@ -142,15 +142,15 @@ class ShortcutEditForm : Form
             if (string.IsNullOrWhiteSpace(_titleBox.Text))
                 _titleBox.Text = leaf;
 
-            // Claude-only: pre-populate the post-launch rename keystrokes so
-            // the tab shows the folder name after `claude` has overwritten it
+            // Claude-only: pre-populate the args textbox with `/rename <folder>`
+            // so the tab shows the folder name after `claude` has overwritten it
             // with its own title on startup. Other profiles get no default.
             int profileIdx = _launchProfileCombo.SelectedIndex;
             bool isClaude = profileIdx >= 0
                 && profileIdx < LaunchProfiles.All.Length
                 && LaunchProfiles.All[profileIdx].Id.Equals("claude", StringComparison.OrdinalIgnoreCase);
-            if (isClaude && string.IsNullOrWhiteSpace(_sendKeysBox.Text))
-                _sendKeysBox.Text = $"/rename {leaf}{{ENTER}}";
+            if (isClaude && string.IsNullOrWhiteSpace(_argsBox.Text))
+                _argsBox.Text = $"\"/rename {leaf}\"";
         };
         Controls.Add(browseBtn);
         y += 34;

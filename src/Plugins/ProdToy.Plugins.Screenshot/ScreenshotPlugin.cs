@@ -42,6 +42,7 @@ public partial class ScreenshotPlugin : IPlugin, IDoctor
         _host = context.Host;
         PluginLog.Bootstrap(context);
         ScreenshotPaths.Initialize(context.DataDirectory);
+        RecentOpenedStore.Initialize(context.DataDirectory);
     }
 
     public void Start() => ApplyHotkeyBindings();

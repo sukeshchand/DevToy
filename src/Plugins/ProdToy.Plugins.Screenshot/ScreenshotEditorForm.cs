@@ -106,6 +106,7 @@ class ScreenshotEditorForm : Form
             Anchor = AnchorStyles.Top | AnchorStyles.Right | AnchorStyles.Bottom,
         };
         _recentPanel.OpenRequested += OpenFromList;
+        _recentPanel.OpenFileRequested += HandleOpenFileDialog;
         _recentPanel.SetEditingId(_session.EditId);
         Controls.Add(_recentPanel);
 
@@ -646,7 +647,84 @@ class ScreenshotEditorForm : Form
     {
         string fileEditId = Path.GetFileNameWithoutExtension(filePath);
         if (fileEditId.Equals(_session.EditId, StringComparison.OrdinalIgnoreCase)) return;
+        RecentOpenedStore.MarkOpened(filePath);
         LoadSession(fileEditId, filePath);
+    }
+
+    /// <summary>
+    /// File-picker entry point invoked by the "Open…" button in the library
+    /// panel. Files under <see cref="ScreenshotPaths.ScreenshotsDir"/> are
+    /// opened directly; files from elsewhere are imported (re-encoded as PNG
+    /// into the library with a fresh library-style name and a matching _edits
+    /// folder) before opening, so the rest of the editor — auto-save, panel
+    /// list, compare — can treat them as native library entries.
+    /// </summary>
+    private void HandleOpenFileDialog()
+    {
+        using var dlg = new OpenFileDialog
+        {
+            Title = "Open image",
+            Filter = "Images (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp|All files (*.*)|*.*",
+            InitialDirectory = ScreenshotPaths.ScreenshotsDir,
+            CheckFileExists = true,
+            Multiselect = false,
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+
+        string picked;
+        try
+        {
+            picked = IsUnderScreenshotsDir(dlg.FileName)
+                ? dlg.FileName
+                : ImportExternalImage(dlg.FileName);
+        }
+        catch (Exception ex)
+        {
+            PluginLog.Error("Open image failed", ex);
+            MessageBox.Show(this, $"Failed to open: {ex.Message}", "Open image",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        RecentOpenedStore.MarkOpened(picked);
+        _recentPanel.Reload();
+
+        string fileEditId = Path.GetFileNameWithoutExtension(picked);
+        if (fileEditId.Equals(_session.EditId, StringComparison.OrdinalIgnoreCase)) return;
+        LoadSession(fileEditId, picked);
+    }
+
+    private static bool IsUnderScreenshotsDir(string filePath)
+    {
+        try
+        {
+            string dir = Path.GetFullPath(ScreenshotPaths.ScreenshotsDir);
+            string full = Path.GetFullPath(filePath);
+            return full.StartsWith(dir, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
+    /// <summary>Copy/re-encode an external image into the screenshots folder
+    /// with a fresh library name, seed its _edits/base.png, and return the
+    /// new library path.</summary>
+    private static string ImportExternalImage(string sourcePath)
+    {
+        string newId = ScreenshotPaths.NewScreenshotBaseName();
+        Directory.CreateDirectory(ScreenshotPaths.ScreenshotsDir);
+        string destPath = Path.Combine(ScreenshotPaths.ScreenshotsDir, newId + ".png");
+
+        using (var stream = File.OpenRead(sourcePath))
+        using (var bmp = new Bitmap(stream))
+        {
+            bmp.Save(destPath, System.Drawing.Imaging.ImageFormat.Png);
+
+            string editDir = Path.Combine(ScreenshotPaths.ScreenshotsEditsDir, newId);
+            Directory.CreateDirectory(editDir);
+            bmp.Save(Path.Combine(editDir, "base.png"), System.Drawing.Imaging.ImageFormat.Png);
+        }
+
+        return destPath;
     }
 
     private void LoadSession(string fileEditId, string filePath)
