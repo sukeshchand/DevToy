@@ -42,6 +42,11 @@ static class ShortcutLauncher
     internal static bool IsUrl(Shortcut s) =>
         LaunchProfiles.GetOrDefault(s.Profile).Kind == LaunchKind.Url;
 
+    /// <summary>True when the shortcut's profile just ShellExecutes a file/path
+    /// (e.g. a Visual Studio .sln, opened via the VS Version Selector).</summary>
+    internal static bool IsOpen(Shortcut s) =>
+        LaunchProfiles.GetOrDefault(s.Profile).Kind == LaunchKind.Open;
+
     public static LaunchResult Launch(Shortcut s, string? titleOverride, bool forceNewWindow)
     {
         // URL shortcut: no command/terminal, no working directory — just open the
@@ -57,6 +62,25 @@ static class ShortcutLauncher
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
                 ShortcutStore.RecordLaunch(s.Id);
                 AutoLoginRunner.RunInBackground(s);   // no-op unless enabled + HomeUrl set
+                return new LaunchResult(true);
+            }
+            catch (Exception ex) { return new LaunchResult(false, ex.Message); }
+        }
+
+        // "Open" shortcut: ShellExecute the configured path with its default handler.
+        // For a .sln that's the Visual Studio Version Selector (VSLauncher.exe),
+        // which launches (or prompts for) the appropriate installed VS version.
+        if (IsOpen(s))
+        {
+            var path = (s.Args ?? "").Trim().Trim('"');
+            if (string.IsNullOrWhiteSpace(path))
+                return new LaunchResult(false, "No file/solution path set for this shortcut.");
+            if (!File.Exists(path) && !Directory.Exists(path))
+                return new LaunchResult(false, $"Path doesn't exist: {path}");
+            try
+            {
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+                ShortcutStore.RecordLaunch(s.Id);
                 return new LaunchResult(true);
             }
             catch (Exception ex) { return new LaunchResult(false, ex.Message); }

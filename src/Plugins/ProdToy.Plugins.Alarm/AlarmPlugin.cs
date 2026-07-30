@@ -2,7 +2,7 @@ using ProdToy.Sdk;
 
 namespace ProdToy.Plugins.Alarm;
 
-[Plugin("ProdToy.Plugin.Alarm", "Alarms", "1.0.385",
+[Plugin("ProdToy.Plugin.Alarm", "Alarms", "1.0.386",
     Description = "Schedule recurring alarms with popup and sound notifications",
     Author = "ProdToy",
     MenuPriority = 200)]
@@ -52,6 +52,9 @@ public partial class AlarmPlugin : IPlugin, IDoctor
 
     public void Stop()
     {
+        // Symmetric with the += in Start(). Without this, a disable/enable (or any
+        // Stop→Start) cycle stacked a second handler → every alarm fired twice.
+        AlarmScheduler.AlarmTriggered -= AlarmNotifier.HandleAlarmTriggered;
         AlarmScheduler.Stop();
         AlarmStore.StopHistoryFlush();
         AlarmNotifier.Cleanup();

@@ -34,6 +34,7 @@ class ShortcutEditForm : Form
     private readonly ToggleSwitch _explorerMenuToggle;
     private readonly ToggleSwitch _desktopShortcutToggle;
     private readonly ToggleSwitch _keepRunningToggle;
+    private readonly ToggleSwitch _ignoreConsolidatedToggle;
     private readonly TextBox _desktopShortcutNameBox;
     // True until the user manually edits the desktop name. While true, the
     // box is auto-populated from "<dir-leaf> <profile-display>" whenever the
@@ -303,24 +304,29 @@ class ShortcutEditForm : Form
                 _argsBox.Text = p.DefaultArgs;
             prevDefault = p.DefaultArgs;
             RebuildArgsChips(chipPanel, p, theme);
-            RefreshForUrlKind();
+            RefreshForKind();
         };
 
-        // "Open URL" profile: keep only the URL field on the Command & Terminal
-        // tab (the args box, relabeled) and disable the working directory. The
-        // Integration + Monitoring tabs stay — auto-login, Status URL, desktop
-        // shortcut, etc. all apply to a URL shortcut too.
-        void RefreshForUrlKind()
+        // Non-terminal profiles (Open URL, Visual Studio solution) keep only the
+        // args field on the Command & Terminal tab (relabeled) and disable the
+        // working directory. The other tabs stay relevant.
+        void RefreshForKind()
         {
-            bool isUrl = CurrentProfileIsUrl();
+            var kind = CurrentProfileKind();
+            bool nonTerminal = kind != LaunchKind.Terminal;
             foreach (Control c in pageCmd.Controls)
-                c.Visible = !isUrl || c == _argsLabel || c == _argsBox || c == _argsHintLabel;
-            if (isUrl)
+                c.Visible = !nonTerminal || c == _argsLabel || c == _argsBox || c == _argsHintLabel;
+            if (kind == LaunchKind.Url)
             {
                 _argsLabel.Text = "URL";
                 _argsHintLabel.Text = "The URL to open in the in-app preview — e.g. https://localhost:5001";
             }
-            _dirBox.Enabled = !isUrl;   // working directory is irrelevant for URL
+            else if (kind == LaunchKind.Open)
+            {
+                _argsLabel.Text = "Solution / file path";
+                _argsHintLabel.Text = @"Path to a .sln (or any file) — opened with its default app; a .sln opens in Visual Studio.";
+            }
+            _dirBox.Enabled = kind == LaunchKind.Terminal;
         }
 
         // Shell — chooses cmd vs PowerShell for the setup steps + command.
@@ -634,6 +640,35 @@ class ShortcutEditForm : Form
         _host.Controls.Add(keepRunningHint);
         y += 42;
 
+        var ignoreConsolidatedCaption = new Label
+        {
+            Text = "Ignore in Consolidated Launcher",
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = theme.TextPrimary,
+            AutoSize = true,
+            Location = new Point(pad, y + 4),
+            BackColor = Color.Transparent,
+        };
+        _host.Controls.Add(ignoreConsolidatedCaption);
+        _ignoreConsolidatedToggle = new ToggleSwitch(theme)
+        {
+            Checked = existing?.ExcludeFromConsolidated ?? false,
+            Location = new Point(inputX, y + 2),
+        };
+        _host.Controls.Add(_ignoreConsolidatedToggle);
+        var ignoreConsolidatedHint = new Label
+        {
+            Text = "Don’t show this as a row in the Consolidated Launcher (for things that aren’t a capturable process — a Claude session, a URL, a VS solution).",
+            Font = new Font("Segoe UI", 8.5f, FontStyle.Italic),
+            ForeColor = theme.TextSecondary,
+            AutoSize = false,
+            Size = new Size(inputW, 30),
+            Location = new Point(inputX + _ignoreConsolidatedToggle.Width + 12, y + 4),
+            BackColor = Color.Transparent,
+        };
+        _host.Controls.Add(ignoreConsolidatedHint);
+        y += 42;
+
         var adminCaption = new Label
         {
             Text = "Require administrator",
@@ -926,8 +961,8 @@ class ShortcutEditForm : Form
         _autoLoginToggle.CheckedChanged += (_, _) => RefreshAutoLoginEnabled();
         RefreshAutoLoginEnabled();
 
-        // Apply URL-kind field/tab visibility once everything is built.
-        RefreshForUrlKind();
+        // Apply profile-kind field visibility once everything is built.
+        RefreshForKind();
 
         // ------------------------------------------------------- Form-level chrome
         int btnRowY = ClientSize.Height - 46;
@@ -995,13 +1030,15 @@ class ShortcutEditForm : Form
         }
     }
 
-    /// <summary>True when the currently-selected launch profile is the URL kind.</summary>
-    private bool CurrentProfileIsUrl()
+    /// <summary>Kind of the currently-selected launch profile.</summary>
+    private LaunchKind CurrentProfileKind()
     {
         int i = _launchProfileCombo.SelectedIndex;
-        return i >= 0 && i < LaunchProfiles.All.Length
-            && LaunchProfiles.All[i].Kind == LaunchKind.Url;
+        return i >= 0 && i < LaunchProfiles.All.Length ? LaunchProfiles.All[i].Kind : LaunchKind.Terminal;
     }
+
+    /// <summary>True when the currently-selected launch profile is the URL kind.</summary>
+    private bool CurrentProfileIsUrl() => CurrentProfileKind() == LaunchKind.Url;
 
     private int AddSection(string text, int y)
     {
@@ -1094,6 +1131,15 @@ class ShortcutEditForm : Form
                 return;
             }
         }
+        else if (CurrentProfileKind() == LaunchKind.Open)
+        {
+            var path = _argsBox.Text.Trim().Trim('"');
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                _validationLabel.Text = "A file / solution (.sln) path is required.";
+                return;
+            }
+        }
         else
         {
             if (string.IsNullOrWhiteSpace(_dirBox.Text))
@@ -1141,6 +1187,7 @@ class ShortcutEditForm : Form
             PostLaunchDelayMs = (int)_sendKeysDelayBox.Value,
             RequireAdmin = _adminToggle.Checked,
             ExcludeFromStopAll = _keepRunningToggle.Checked,
+            ExcludeFromConsolidated = _ignoreConsolidatedToggle.Checked,
             ShowInExplorerContextMenu = _explorerMenuToggle.Checked,
             AddToDesktop = _desktopShortcutToggle.Checked,
             DesktopShortcutName = _desktopShortcutNameBox.Text.Trim(),
@@ -1289,8 +1336,11 @@ class ShortcutEditForm : Form
             string captured = token;
             chip.Click += (_, _) =>
             {
-                // Toggle: add the token if missing, remove it if already present.
-                _argsBox.Text = ToggleArgsToken(_argsBox.Text, captured);
+                // "/rename <name>" is a template — insert /rename with the shortcut's
+                // own name; other chips just toggle their literal token.
+                _argsBox.Text = captured.Contains("<name>")
+                    ? ToggleRenameDirective(_argsBox.Text, _nameBox.Text)
+                    : ToggleArgsToken(_argsBox.Text, captured);
                 _argsBox.Focus();
                 _argsBox.SelectionStart = _argsBox.Text.Length;
                 RefreshArgsChipStates(panel);
@@ -1307,11 +1357,31 @@ class ShortcutEditForm : Form
         foreach (Control c in panel.Controls)
         {
             if (c is not RoundedButton chip || chip.Tag is not string token) continue;
-            bool active = ArgsHasToken(_argsBox.Text, token);
+            bool active = token.Contains("<name>")
+                ? _renameRx.IsMatch(_argsBox.Text ?? "")
+                : ArgsHasToken(_argsBox.Text, token);
             chip.Text = active ? "✓ " + token : token;
             chip.BackColor = active ? _theme.Primary : _theme.PrimaryDim;
             chip.ForeColor = active ? Color.White : _theme.TextPrimary;
         }
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex _renameRx =
+        new(@"""\s*/rename[^""]*""", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>Toggle a <c>"/rename &lt;name&gt;"</c> directive: remove it if present,
+    /// else append one using the shortcut's current name (quoted so names with
+    /// spaces work).</summary>
+    private static string ToggleRenameDirective(string? args, string? name)
+    {
+        string a = args ?? "";
+        if (_renameRx.IsMatch(a))
+            return string.Join(" ", _renameRx.Replace(a, "").Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        string nm = (name ?? "").Trim();
+        if (nm.Length == 0) nm = "name";
+        string directive = $"\"/rename {nm}\"";
+        string norm = string.Join(" ", a.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        return norm.Length == 0 ? directive : norm + " " + directive;
     }
 
     private static bool ArgsHasToken(string? args, string token)

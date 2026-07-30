@@ -183,8 +183,6 @@ static class AlarmScheduler
 
     private static bool ShouldFire(AlarmEntry alarm, DateTime now)
     {
-        if (alarm.PausedUntil is DateTime pu && pu > now) return false;
-
         // Persistent dedupe across process restarts: if the alarm has
         // already triggered within the current minute (or within the last
         // 30 seconds for an interval alarm) skip it. Without this, a
@@ -205,16 +203,8 @@ static class AlarmScheduler
             }
         }
 
-        if (alarm.StartDate != null && DateTime.TryParse(alarm.StartDate, out var sd) && now.Date < sd.Date)
-            return false;
-
-        if (alarm.ExceptionDates is { Length: > 0 } exDates)
-        {
-            foreach (var s in exDates)
-                if (DateTime.TryParse(s, out var ex) && ex.Date == now.Date) return false;
-        }
-
-        var time = alarm.Schedule.GetTimeOfDay();
+        // Pause / snooze / start-end / exception guards apply to every type.
+        if (!PassesRangeGuards(alarm, now)) return false;
 
         if (alarm.Schedule.Type == AlarmScheduleType.Interval)
         {
@@ -227,27 +217,44 @@ static class AlarmScheduler
             return false;
         }
 
+        // Fixed-time alarms: the current minute must match AND today must be a day
+        // the schedule actually covers.
+        var time = alarm.Schedule.GetTimeOfDay();
         var nowTime = now.TimeOfDay;
-        bool timeMatch = nowTime.Hours == time.Hours && nowTime.Minutes == time.Minutes;
-        if (!timeMatch) return false;
-
-        if (alarm.EndDate != null && DateTime.TryParse(alarm.EndDate, out var end) && now.Date > end.Date)
-            return false;
-
-        return alarm.Schedule.Type switch
-        {
-            AlarmScheduleType.Once => alarm.Schedule.OneTimeDate != null
-                && DateTime.TryParse(alarm.Schedule.OneTimeDate, out var d)
-                && d.Date == now.Date,
-            AlarmScheduleType.Daily => true,
-            AlarmScheduleType.Weekdays => now.DayOfWeek is >= DayOfWeek.Monday and <= DayOfWeek.Friday,
-            AlarmScheduleType.Weekend => now.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday,
-            AlarmScheduleType.Weekly => alarm.Schedule.CustomDays is { Length: > 0 } days && now.DayOfWeek == days[0],
-            AlarmScheduleType.Monthly => alarm.Schedule.DayOfMonth is int dom && now.Day == dom,
-            AlarmScheduleType.Custom => alarm.Schedule.CustomDays is { Length: > 0 } days && days.Contains(now.DayOfWeek),
-            _ => false,
-        };
+        if (nowTime.Hours != time.Hours || nowTime.Minutes != time.Minutes) return false;
+        return MatchesDayOfSchedule(alarm, now);
     }
+
+    /// <summary>Pause / snooze / start-date / end-date / exception-date guards —
+    /// true only when none of them block a fire right now. Applies to all types.</summary>
+    private static bool PassesRangeGuards(AlarmEntry alarm, DateTime now)
+    {
+        if (alarm.PausedUntil is DateTime pu && pu > now) return false;
+        if (alarm.SnoozedUntil is DateTime su && su > now) return false;
+        if (alarm.StartDate != null && DateTime.TryParse(alarm.StartDate, out var sd) && now.Date < sd.Date) return false;
+        if (alarm.EndDate != null && DateTime.TryParse(alarm.EndDate, out var end) && now.Date > end.Date) return false;
+        if (alarm.ExceptionDates is { Length: > 0 } exDates)
+            foreach (var s in exDates)
+                if (DateTime.TryParse(s, out var ex) && ex.Date == now.Date) return false;
+        return true;
+    }
+
+    /// <summary>Whether today is a day this alarm's schedule covers (day-of-week /
+    /// date). Does not consider time-of-day, pause, or range — see
+    /// <see cref="PassesRangeGuards"/>.</summary>
+    private static bool MatchesDayOfSchedule(AlarmEntry alarm, DateTime now) => alarm.Schedule.Type switch
+    {
+        AlarmScheduleType.Once => alarm.Schedule.OneTimeDate != null
+            && DateTime.TryParse(alarm.Schedule.OneTimeDate, out var d) && d.Date == now.Date,
+        AlarmScheduleType.Daily => true,
+        AlarmScheduleType.Weekdays => now.DayOfWeek is >= DayOfWeek.Monday and <= DayOfWeek.Friday,
+        AlarmScheduleType.Weekend => now.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday,
+        // Weekly honors every selected day (was only CustomDays[0]).
+        AlarmScheduleType.Weekly => alarm.Schedule.CustomDays is { Length: > 0 } wdays && wdays.Contains(now.DayOfWeek),
+        AlarmScheduleType.Monthly => alarm.Schedule.DayOfMonth is int dom && now.Day == dom,
+        AlarmScheduleType.Custom => alarm.Schedule.CustomDays is { Length: > 0 } cdays && cdays.Contains(now.DayOfWeek),
+        _ => false,
+    };
 
     /// <summary>Look for active alarms whose scheduled time today fell
     /// inside the missed-grace window (default 5 min) and that haven't
@@ -264,6 +271,11 @@ static class AlarmScheduler
         {
             if (alarm.Status != AlarmStatus.Active) continue;
             if (alarm.Schedule.Type == AlarmScheduleType.Interval) continue;
+
+            // Only recover a missed alarm if today actually matches its schedule and
+            // no pause/snooze/date-range/exception guard blocks it. Without this the
+            // recovery path fired every schedule type on the wrong days/dates.
+            if (!PassesRangeGuards(alarm, now) || !MatchesDayOfSchedule(alarm, now)) continue;
 
             var time = alarm.Schedule.GetTimeOfDay();
             var scheduledToday = now.Date + time;

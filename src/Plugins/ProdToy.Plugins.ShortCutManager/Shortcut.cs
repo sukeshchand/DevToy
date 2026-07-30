@@ -154,6 +154,15 @@ sealed record Shortcut
     public bool ExcludeFromStopAll { get; init; }
 
     /// <summary>
+    /// When true, this shortcut is not shown as a row in the Consolidated Launcher
+    /// (it isn't a capturable long-running process — e.g. a Claude CLI session, a
+    /// URL, or a Visual Studio solution). Default false. Group/single launch are
+    /// unaffected.
+    /// </summary>
+    [JsonPropertyName("excludeFromConsolidated")]
+    public bool ExcludeFromConsolidated { get; init; }
+
+    /// <summary>
     /// When true, the plugin registers a Windows Explorer right-click verb
     /// scoped to <see cref="WorkingDirectory"/>: right-clicking inside that
     /// folder shows a "Run …" menu item that launches this shortcut. Off

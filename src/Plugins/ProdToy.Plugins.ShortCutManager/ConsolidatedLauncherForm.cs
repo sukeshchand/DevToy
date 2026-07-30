@@ -108,7 +108,9 @@ sealed class ConsolidatedLauncherForm : Form
     {
         _theme = theme;
         _folderPath = folderPath;
-        _shortcuts = shortcuts;
+        // Shortcuts flagged "ignore in Consolidated Launcher" (Claude sessions, URLs,
+        // VS solutions — not capturable long-running processes) are left out.
+        _shortcuts = shortcuts.Where(s => !s.ExcludeFromConsolidated).ToList();
 
         // Folder name first (so it's visible in the truncated taskbar title), and
         // use just the folder's leaf rather than the full path to keep it short.
@@ -216,7 +218,7 @@ sealed class ConsolidatedLauncherForm : Form
 
         _statusLabel = new Label
         {
-            Text = $"{shortcuts.Count} shortcut(s) · Ready.",
+            Text = $"{_shortcuts.Count} shortcut(s) · Ready.",
             Font = new Font("Segoe UI", 9f),
             ForeColor = theme.TextSecondary,
             AutoSize = false,
@@ -263,10 +265,11 @@ sealed class ConsolidatedLauncherForm : Form
         _browserTabs = new ConsolidatedBrowserTabs(theme) { Dock = DockStyle.Fill };
         outerSplit.Panel2.Controls.Add(_browserTabs);
 
-        // Rows + console tabs, one per shortcut.
-        for (int i = 0; i < shortcuts.Count; i++)
+        // Rows + console tabs, one per shortcut (excluded ones already filtered
+        // out of _shortcuts, so they get no row).
+        for (int i = 0; i < _shortcuts.Count; i++)
         {
-            var s = shortcuts[i];
+            var s = _shortcuts[i];
             var swatch = ConsolidatedLogTabs.StableColor(s.Id);
             _logTabs.AddOrGetTab(s.Id, ShortName(s), swatch);
 
@@ -342,7 +345,7 @@ sealed class ConsolidatedLauncherForm : Form
         };
 
         _logTabs.AppendLine(ConsolidatedLogTabs.LauncherTabKey,
-            $"[{DateTime.Now:HH:mm:ss}] Consolidated Launcher ready for \"{folderPath}\" ({shortcuts.Count} shortcut(s)).");
+            $"[{DateTime.Now:HH:mm:ss}] Consolidated Launcher ready for \"{folderPath}\" ({_shortcuts.Count} shortcut(s)).");
 
         _pollTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _pollTimer.Tick += (_, _) => RefreshStatus();
@@ -704,6 +707,16 @@ sealed class ConsolidatedLauncherForm : Form
                             $"[{DateTime.Now:HH:mm:ss}] {ShortName(s)} · auto-login: {msg}", false));
                 });
             }
+            return;
+        }
+
+        // "Open" shortcut (VS solution / file) → ShellExecute; no captured process.
+        if (ShortcutLauncher.IsOpen(s))
+        {
+            var r = ShortcutLauncher.Launch(s);
+            row.SetState(r.Ok ? ConsolidatedRow.RowState.Running : ConsolidatedRow.RowState.Failed,
+                r.Ok ? "Opened ↗" : (r.ErrorMessage ?? "Open failed"), null);
+            LogLauncher(r.Ok ? $"↗ {ShortName(s)} — opened: {s.Args}" : $"✖ {ShortName(s)} — {r.ErrorMessage}");
             return;
         }
 

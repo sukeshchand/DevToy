@@ -11,6 +11,10 @@ enum LaunchKind
 {
     Terminal,
     Url,
+    /// <summary>ShellExecute a file/path (no terminal). Used for opening a Visual
+    /// Studio solution (.sln) via the VS Version Selector, or any file with its
+    /// default handler. The <see cref="Shortcut.Args"/> field holds the path.</summary>
+    Open,
 }
 
 /// <summary>
@@ -68,6 +72,7 @@ static class LaunchProfiles
                 "--model sonnet",
                 "--model opus",
                 "--model haiku",
+                "/rename <name>",
             },
             SupportsContinueFallback = true,
         },
@@ -123,6 +128,15 @@ static class LaunchProfiles
             Kind = LaunchKind.Url,
             DefaultArgs = "",
             ArgsHint = "The URL to open in the in-app preview — e.g. https://localhost:5001",
+        },
+        new LaunchProfile
+        {
+            Id = "vssln",
+            DisplayName = "Visual Studio solution",
+            Command = "",
+            Kind = LaunchKind.Open,
+            DefaultArgs = "",
+            ArgsHint = @"Path to a .sln file — opens in Visual Studio (the VS Version Selector picks the version). e.g. C:\source\App\App.sln",
         },
     };
 
