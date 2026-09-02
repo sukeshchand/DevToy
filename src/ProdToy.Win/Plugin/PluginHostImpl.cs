@@ -15,6 +15,7 @@ sealed class PluginHostImpl : IPluginHost
     // BeginInvoke works even when the form has never been shown.
     private readonly DashboardForm _dashboardForm;
     private readonly PipeRouter _pipeRouter;
+    private readonly RpcRouter _rpcRouter;
     private readonly List<IPluginPopup> _registeredPopups = new();
 
     // Strong references to popup forms enqueued via QueuePopup. Without
@@ -33,6 +34,7 @@ sealed class PluginHostImpl : IPluginHost
         // user has ever opened the dashboard.
         _ = _dashboardForm.Handle;
         _pipeRouter = new PipeRouter(InvokeOnUI);
+        _rpcRouter = new RpcRouter(InvokeOnUI);
     }
 
     public PluginTheme CurrentTheme => ToPluginTheme(Themes.LoadSaved());
@@ -46,6 +48,7 @@ sealed class PluginHostImpl : IPluginHost
     public NotifyIcon TrayIcon => _trayIcon;
 
     internal PipeRouter PipeRouter => _pipeRouter;
+    internal RpcRouter RpcRouter => _rpcRouter;
     internal IReadOnlyList<IPluginPopup> RegisteredPopups => _registeredPopups;
 
     public void ShowBalloonNotification(string title, string message, ToolTipIcon icon = ToolTipIcon.Info)
@@ -147,6 +150,9 @@ sealed class PluginHostImpl : IPluginHost
 
     public IDisposable RegisterPipeHandler(string command, PipeCommandHandler handler)
         => _pipeRouter.Register(command, handler);
+
+    public IDisposable RegisterRpcHandler(string command, PipeRpcHandler handler)
+        => _rpcRouter.Register(command, handler);
 
     public IDisposable RegisterPopup(IPluginPopup popup)
     {

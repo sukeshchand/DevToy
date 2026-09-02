@@ -139,6 +139,28 @@ Plugin lifecycle: `Initialize(context)` → `Start()` → (running) → `Stop()`
   logs/prod-toy-yyyyMMdd.log           Unified daily log (host + plugins, 30-day retention)
 ```
 
+### Remote Control (CLI verbs + MCP server)
+
+The running host exposes a request/response named pipe (`ProdToy_RpcPipe`, one line
+of JSON per direction). Plugins register handlers via `IPluginHost.RegisterRpcHandler`.
+Two clients ship in `ProdToy.exe` itself:
+
+```bash
+# CLI verbs (exit codes: 0 ok, 1 command failed, 2 usage/host not running)
+ProdToy.exe launcher <stop-all|launch-all|restart-all|status|folders> [--folder <name>]
+ProdToy.exe --rpc <command> [--payload <json>]     # generic escape hatch
+
+# MCP stdio server (register in Claude Code; bridges tool calls to the pipe)
+claude mcp add prodtoy -- "%USERPROFILE%\.prod-toy\ProdToy.exe" --mcp
+```
+
+MCP tools: `launcher_restart_all`, `launcher_launch_all`, `launcher_stop_all`,
+`launcher_status`, `launcher_folders` (all take an optional `folder`). The
+ShortCutManager plugin implements the `shortcuts.launcher.*` commands
+(`LauncherRpc.cs`) by driving the Consolidated Launcher window. Key files:
+`Program.cs` (CLI + pipe client), `Core/McpServerMode.cs`, `Plugin/RpcRouter.cs`,
+`Popup/PopupAppContext.cs` (`RpcPipeServerLoop`).
+
 ### Execution Flow
 
 1. **First instance with no args from non-install dir** → opens `SetupForm`

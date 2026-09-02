@@ -4,7 +4,7 @@ using ProdToy.Sdk;
 
 namespace ProdToy.Plugins.ShortCutManager;
 
-[Plugin("ProdToy.Plugin.ShortCutManager", "Shortcuts", "1.0.465",
+[Plugin("ProdToy.Plugin.ShortCutManager", "Shortcuts", "1.0.466",
     Description = "Folder-organized launcher for project shortcuts — Claude CLI, npm, dotnet, custom commands",
     Author = "ProdToy",
     MenuPriority = 250)]
@@ -14,6 +14,7 @@ public partial class ShortCutManagerPlugin : IPlugin, IDoctor
     private ShortcutsForm? _shortcutsForm;
     private IDisposable? _contextLaunchPipeHandler;
     private IDisposable? _idLaunchPipeHandler;
+    private readonly List<IDisposable> _launcherRpcHandlers = new();
     private Action? _shortcutsChangedHandler;
 
     public void Install(IPluginContext context)
@@ -69,6 +70,17 @@ public partial class ShortCutManagerPlugin : IPlugin, IDoctor
         _contextLaunchPipeHandler = context.Host.RegisterPipeHandler("shortcuts.context-launch", OnContextLaunchPipeCommand);
         _idLaunchPipeHandler = context.Host.RegisterPipeHandler("shortcuts.launch", OnIdLaunchPipeCommand);
 
+        // Request/response RPC commands driving the Consolidated Launcher from
+        // outside the app: `ProdToy.exe launcher <verb>` CLI and the --mcp
+        // server (so a Claude CLI session can stop/relaunch the apps it edits).
+        foreach (var verb in new[] { "stop-all", "launch-all", "restart-all", "status", "folders" })
+        {
+            string v = verb;
+            _launcherRpcHandlers.Add(context.Host.RegisterRpcHandler(
+                $"shortcuts.launcher.{v}",
+                cmd => LauncherRpc.HandleAsync(_context, v, cmd)));
+        }
+
         // Refresh registry entries whenever shortcuts change so the menu
         // stays in sync with renames, working-directory edits, etc.
         _shortcutsChangedHandler = RefreshContextMenu;
@@ -102,6 +114,8 @@ public partial class ShortCutManagerPlugin : IPlugin, IDoctor
         _contextLaunchPipeHandler = null;
         _idLaunchPipeHandler?.Dispose();
         _idLaunchPipeHandler = null;
+        foreach (var h in _launcherRpcHandlers) h.Dispose();
+        _launcherRpcHandlers.Clear();
 
         _context.Host.InvokeOnUI(() =>
         {

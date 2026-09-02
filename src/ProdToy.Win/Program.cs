@@ -8,10 +8,41 @@ static class Program
 {
     private const string MutexName = "ProdToy_SingleInstance_Mutex";
     internal const string PipeName = "ProdToy_Pipe";
+    internal const string RpcPipeName = "ProdToy_RpcPipe";
 
     [STAThread]
     static void Main(string[] args)
     {
+        // MCP stdio server mode: `ProdToy.exe --mcp` is registered as an MCP
+        // server in Claude Code (stdin/stdout JSON-RPC). It never touches
+        // WinForms or the single-instance mutex — it's a thin bridge that
+        // forwards tool calls to the running host over the RPC pipe.
+        if (args.Length > 0 && string.Equals(args[0], "--mcp", StringComparison.OrdinalIgnoreCase))
+        {
+            McpServerMode.Run();
+            return;
+        }
+
+        // `ProdToy.exe launcher <verb> [--folder <name>]` — request/response CLI
+        // for the Consolidated Launcher (stop-all / launch-all / restart-all /
+        // status / folders). Prints the JSON response to the invoking console.
+        if (args.Length > 0 && string.Equals(args[0], "launcher", StringComparison.OrdinalIgnoreCase))
+        {
+            Environment.ExitCode = RunLauncherCli(args);
+            return;
+        }
+
+        // Generic RPC escape hatch: `ProdToy.exe --rpc <command> [--payload <json>]`.
+        if (args.Length > 1 && string.Equals(args[0], "--rpc", StringComparison.OrdinalIgnoreCase))
+        {
+            string? rpcPayload = null;
+            for (int i = 2; i < args.Length - 1; i++)
+                if (string.Equals(args[i], "--payload", StringComparison.OrdinalIgnoreCase))
+                    rpcPayload = args[i + 1];
+            Environment.ExitCode = RunRpcCli(args[1], rpcPayload);
+            return;
+        }
+
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
@@ -298,6 +329,90 @@ static class Program
         {
             Log.Warn($"SendToPipe failed: {ex.Message}");
         }
+    }
+
+    // ─────────────────────────── launcher CLI / RPC ───────────────────────────
+
+    /// <summary>Maps `launcher <verb>` CLI invocations onto the RPC pipe
+    /// commands registered by the Shortcuts plugin. Exit codes: 0 = ok,
+    /// 1 = command reported failure, 2 = usage error or host not running.</summary>
+    private static int RunLauncherCli(string[] args)
+    {
+        string[] verbs = { "stop-all", "launch-all", "restart-all", "status", "folders" };
+        string? verb = args.Length > 1 ? args[1].ToLowerInvariant() : null;
+        if (verb == null || !verbs.Contains(verb))
+        {
+            WriteConsoleLine(
+                "Usage: ProdToy.exe launcher <stop-all|launch-all|restart-all|status|folders> [--folder <name>]");
+            return 2;
+        }
+
+        string? folder = null;
+        for (int i = 2; i < args.Length - 1; i++)
+            if (string.Equals(args[i], "--folder", StringComparison.OrdinalIgnoreCase))
+                folder = args[i + 1];
+
+        string? payload = folder != null
+            ? JsonSerializer.Serialize(new { folder })
+            : null;
+        return RunRpcCli($"shortcuts.launcher.{verb}", payload);
+    }
+
+    private static int RunRpcCli(string command, string? payloadJson)
+    {
+        string? response = TrySendRpc(command, payloadJson);
+        if (response == null)
+        {
+            WriteConsoleLine("{\"ok\":false,\"message\":\"ProdToy is not running (RPC pipe unreachable). Start ProdToy first.\"}");
+            return 2;
+        }
+
+        WriteConsoleLine(response);
+        try
+        {
+            using var doc = JsonDocument.Parse(response);
+            if (doc.RootElement.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True)
+                return 0;
+        }
+        catch { }
+        return 1;
+    }
+
+    /// <summary>One request/response exchange on the RPC pipe. Returns the
+    /// response line, or null when the host isn't reachable. Shared by the CLI
+    /// verbs above and by <see cref="McpServerMode"/>.</summary>
+    internal static string? TrySendRpc(string command, string? payloadJson)
+    {
+        try
+        {
+            using var client = new NamedPipeClientStream(".", RpcPipeName, PipeDirection.InOut);
+            client.Connect(3000);
+            using var writer = new StreamWriter(client, new UTF8Encoding(false), 4096, leaveOpen: true)
+            { AutoFlush = true };
+            using var reader = new StreamReader(client, Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
+
+            writer.WriteLine(JsonSerializer.Serialize(new { command, payload = payloadJson }));
+            return reader.ReadLine();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"RPC send failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>ProdToy.exe is a WinExe (no console of its own) — attach to the
+    /// invoking terminal's console so CLI output lands where the user typed the
+    /// command. No-op when launched without a parent console.</summary>
+    private static void WriteConsoleLine(string line)
+    {
+        try
+        {
+            NativeMethods.AttachConsole(-1);   // ATTACH_PARENT_PROCESS
+            Console.WriteLine(line);
+        }
+        catch { }
     }
 
     /// <summary>Sends a routed envelope {command, payload} to the running host's

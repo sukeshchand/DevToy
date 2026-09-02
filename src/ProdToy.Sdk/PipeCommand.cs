@@ -12,3 +12,12 @@ public sealed record PipeCommand(string Command, string? PayloadJson);
 /// The host dispatches on the UI thread so handlers can touch forms directly.
 /// </summary>
 public delegate void PipeCommandHandler(PipeCommand command);
+
+/// <summary>
+/// Delegate plugins register via <see cref="IPluginHost.RegisterRpcHandler"/> for
+/// request/response commands arriving on the host's RPC pipe (CLI verbs, MCP
+/// tools). Dispatched on the UI thread; the returned string is sent back to the
+/// caller verbatim, so it MUST be single-line JSON — by convention an object
+/// with at least {"ok":bool,"message":string}.
+/// </summary>
+public delegate Task<string> PipeRpcHandler(PipeCommand command);

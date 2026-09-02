@@ -82,6 +82,7 @@ class PopupAppContext : ApplicationContext
         };
 
         Task.Run(() => PipeServerLoop(_cts.Token));
+        Task.Run(() => RpcPipeServerLoop(_cts.Token));
 
         // Exit when popup requests it (e.g. after update)
         _popupForm.ExitRequested += () => ExitApp();
@@ -265,6 +266,50 @@ class PopupAppContext : ApplicationContext
             catch (Exception ex)
             {
                 Log.Warn($"Pipe server error: {ex.Message}");
+                await Task.Delay(100, ct);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Request/response pipe used by the `ProdToy.exe launcher …` CLI verbs and
+    /// the `--mcp` stdio server. Protocol is one line of JSON per direction:
+    /// request {"command":"...","payload":"..."} in, the handler's single-line
+    /// JSON response out. One client at a time — callers are interactive tools
+    /// that connect, exchange one message, and disconnect.
+    /// </summary>
+    private async Task RpcPipeServerLoop(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                using var server = new NamedPipeServerStream(
+                    Program.RpcPipeName, PipeDirection.InOut, 1,
+                    PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+
+                await server.WaitForConnectionAsync(ct);
+
+                using var reader = new StreamReader(server, Encoding.UTF8,
+                    detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
+                using var writer = new StreamWriter(server, new UTF8Encoding(false), 4096, leaveOpen: true)
+                { AutoFlush = true };
+
+                string? request = await reader.ReadLineAsync(ct);
+                if (!string.IsNullOrWhiteSpace(request))
+                {
+                    string response = _pluginHost is { } host
+                        ? await host.RpcRouter.DispatchAsync(request)
+                        : "{\"ok\":false,\"message\":\"host not ready\"}";
+                    await writer.WriteLineAsync(response);
+                }
+
+                try { server.WaitForPipeDrain(); } catch { }
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                Log.Warn($"RPC pipe server error: {ex.Message}");
                 await Task.Delay(100, ct);
             }
         }

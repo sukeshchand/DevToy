@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using ProdToy.Sdk;
 
@@ -31,6 +32,12 @@ sealed class ConsolidatedLauncherForm : Form
 
     /// <summary>Open (or focus, if already open) the consolidated launcher for a folder.</summary>
     public static void OpenOrFocus(PluginTheme theme, string folderPath, List<Shortcut> shortcuts)
+        => GetOrCreate(theme, folderPath, shortcuts);
+
+    /// <summary>Same as <see cref="OpenOrFocus"/> but returns the (existing or
+    /// newly shown) form — used by the RPC commands to drive Stop All /
+    /// Launch All programmatically.</summary>
+    internal static ConsolidatedLauncherForm GetOrCreate(PluginTheme theme, string folderPath, List<Shortcut> shortcuts)
     {
         if (s_open.TryGetValue(folderPath, out var existing) && !existing.IsDisposed)
         {
@@ -38,12 +45,21 @@ sealed class ConsolidatedLauncherForm : Form
                 existing.WindowState = FormWindowState.Normal;
             existing.BringToFront();
             existing.Activate();
-            return;
+            return existing;
         }
         var form = new ConsolidatedLauncherForm(theme, folderPath, shortcuts);
         s_open[folderPath] = form;
         form.Show();
+        return form;
     }
+
+    /// <summary>The already-open launcher for a folder, or null.</summary>
+    internal static ConsolidatedLauncherForm? TryGetOpen(string folderPath)
+        => s_open.TryGetValue(folderPath, out var f) && !f.IsDisposed ? f : null;
+
+    /// <summary>Folder paths that currently have an open launcher window.</summary>
+    internal static List<string> OpenFolderPaths()
+        => s_open.Where(kv => !kv.Value.IsDisposed).Select(kv => kv.Key).ToList();
 
     private readonly PluginTheme _theme;
     private readonly string _folderPath;
@@ -987,7 +1003,7 @@ sealed class ConsolidatedLauncherForm : Form
     private void LogLauncher(string message) =>
         _logTabs.AppendLine(ConsolidatedLogTabs.LauncherTabKey, $"[{DateTime.Now:HH:mm:ss}] {message}");
 
-    private void StopAll()
+    private (int Stopped, int Kept) StopAll()
     {
         // Cancel an in-progress sequential build and kill any running build.
         _buildCts?.Cancel();
@@ -1013,6 +1029,96 @@ sealed class ConsolidatedLauncherForm : Form
         var msg = stopped == 0 ? "Nothing to stop." : $"Stopped {stopped} process(es).";
         if (kept > 0) msg += $" {kept} kept running.";
         _statusLabel.Text = msg;
+        return (stopped, kept);
+    }
+
+    // ─────────────────────────── RPC entry points ───────────────────────────
+    // Invoked (on the UI thread) by the plugin's shortcuts.launcher.* pipe
+    // commands — the `ProdToy.exe launcher …` CLI and the --mcp server.
+
+    /// <summary>Fire-and-forget Launch All. Launching (and any sequential
+    /// build) continues in the background; callers poll RpcStatusJson.</summary>
+    internal void RpcLaunchAll() => LaunchAll();
+
+    /// <summary>Stop All, then wait (bounded) for the process trees to actually
+    /// exit so a follow-up launch doesn't race dying processes.</summary>
+    internal async Task<(int Stopped, int Kept, bool AllExited)> RpcStopAllAsync()
+    {
+        var (stopped, kept) = StopAll();
+        bool allExited = await WaitAllStoppedAsync(TimeSpan.FromSeconds(15));
+        return (stopped, kept, allExited);
+    }
+
+    /// <summary>Stop everything, wait for exit, then Launch All.</summary>
+    internal async Task<(int Stopped, int Kept, bool AllExited)> RpcRestartAllAsync()
+    {
+        var result = await RpcStopAllAsync();
+        if (!IsDisposed) LaunchAll();
+        return result;
+    }
+
+    /// <summary>True once no stoppable shortcut has a live process (runner or
+    /// externally matched). Polls on the UI thread via await, so the window
+    /// keeps painting while an RPC caller waits.</summary>
+    internal async Task<bool> WaitAllStoppedAsync(TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline && !IsDisposed)
+        {
+            if (!AnyStoppableRunning()) return true;
+            await Task.Delay(250);
+        }
+        return !IsDisposed && !AnyStoppableRunning();
+    }
+
+    private bool AnyStoppableRunning()
+    {
+        foreach (var s in _shortcuts)
+        {
+            if (s.ExcludeFromStopAll) continue;
+            if (_runners.TryGetValue(s.Id, out var r) && r.IsRunning) return true;
+            if (_matchedRoot.TryGetValue(s.Id, out var pid) && pid > 0)
+            {
+                try { if (!Process.GetProcessById(pid).HasExited) return true; }
+                catch { /* exited — GetProcessById throws */ }
+            }
+        }
+        return false;
+    }
+
+    /// <summary>Single-line JSON snapshot of every row for RPC status calls.</summary>
+    internal string RpcStatusJson()
+    {
+        var items = new List<object>();
+        foreach (var s in _shortcuts)
+        {
+            var row = _rowsById.GetValueOrDefault(s.Id);
+            var proc = row?.ProcInfo;
+            items.Add(new
+            {
+                id = s.Id,
+                name = ShortName(s),
+                state = row?.State.ToString() ?? "Unknown",
+                detail = row?.StateLabel ?? "",
+                pid = proc is { Has: true } p ? p.Pid : (int?)null,
+                process = proc is { Has: true } p2 ? p2.Name : null,
+                memory = proc is { Has: true } p3 ? p3.Mem : null,
+                uptime = proc is { Has: true } p4 ? p4.Uptime : null,
+                external = proc is { Has: true, External: true },
+                keepRunningOnStopAll = s.ExcludeFromStopAll,
+                statusUrl = string.IsNullOrWhiteSpace(s.StatusUrl) ? null : s.StatusUrl,
+                urlHealth = row is null || row.UrlStatus == ConsolidatedRow.UrlState.NotConfigured
+                    ? null
+                    : $"{row.UrlStatus}{(string.IsNullOrEmpty(row.UrlDetail) ? "" : $" ({row.UrlDetail})")}",
+            });
+        }
+        return JsonSerializer.Serialize(new
+        {
+            ok = true,
+            folder = _folderPath,
+            launcherOpen = true,
+            shortcuts = items,
+        });
     }
 
     private bool StopOne(string id) => StopOne(id, silent: false);
@@ -1571,6 +1677,12 @@ sealed class ConsolidatedRow : Panel
     private static readonly Color AmberDim = Color.FromArgb(0x40, 0xE6, 0xA5, 0x3A);
 
     public RowState State => _state;
+    public string StateLabel => _stateLabel;
+    public UrlState UrlStatus => _urlState;
+    public string UrlDetail => _urlDetail;
+    /// <summary>Matched-process snapshot for RPC status (mirrors the chips).</summary>
+    public (bool Has, string? Name, int Pid, string? Mem, string? Uptime, bool External) ProcInfo =>
+        (_hasProc, _procName, _procPid, _procMem, _procUptime, _procExternal);
 
     public event Action? LaunchRequested;
     public event Action? StopRequested;

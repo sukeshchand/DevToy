@@ -63,6 +63,13 @@ public interface IPluginHost
     /// matching handler on the UI thread. Returns a disposable that unregisters on dispose.</summary>
     IDisposable RegisterPipeHandler(string command, PipeCommandHandler handler);
 
+    /// <summary>Register a request/response handler for the host's RPC pipe
+    /// (`ProdToy.exe launcher …` CLI verbs and the `--mcp` server route through
+    /// this). Dispatched on the UI thread; the handler's returned single-line
+    /// JSON is written back to the caller. Returns a disposable that unregisters
+    /// on dispose.</summary>
+    IDisposable RegisterRpcHandler(string command, PipeRpcHandler handler);
+
     /// <summary>Register a plugin-owned popup window so the host can route
     /// lifecycle events (theme change, exit) into it. Returns a disposable
     /// that unregisters on dispose.</summary>
