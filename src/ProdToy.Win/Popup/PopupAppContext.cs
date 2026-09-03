@@ -32,6 +32,18 @@ class PopupAppContext : ApplicationContext
 
     public PopupAppContext(string initialTitle, string initialMessage, string initialType, bool startHidden = false)
     {
+        // Pin the auto-updater's framework assemblies into the process NOW,
+        // while the .NET runtime folder this process bound to still exists.
+        // A .NET servicing update (e.g. 8.0.29 → 8.0.30) uninstalls the old
+        // runtime folder while this tray app keeps running against it for
+        // weeks; a framework assembly first touched later — ZipFile during an
+        // auto-update — then fails with FileNotFoundException. Loading them up
+        // front keeps their files locked/usable for the process lifetime.
+        _ = typeof(System.IO.Compression.ZipFile).Assembly;
+        _ = typeof(System.IO.Compression.ZipArchive).Assembly;
+        _ = typeof(System.Net.Http.HttpClient).Assembly;
+        _ = typeof(System.Security.Cryptography.SHA256).Assembly;
+
         var theme = Themes.LoadSaved();
         _appIcon = Themes.CreateAppIcon(theme.Primary);
 
