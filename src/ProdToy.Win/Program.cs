@@ -190,6 +190,11 @@ static class Program
 
         Log.Info($"ProdToy v{AppVersion.Current} starting{(DevMode.IsEnabled ? " (dev mode)" : "")}");
 
+        // Sweep exe files the updater renamed aside (Phase 2 rename-swap —
+        // they were locked by --mcp bridge processes at update time). Delete
+        // fails while such a process still runs from one; the next start gets it.
+        CleanupOldExeAsides();
+
         // Keep the Apps & Features DisplayVersion in sync with the running exe.
         // After an auto-update swap, this refreshes the value so "Installed updates"
         // in Windows Settings matches AppVersion.Current. Skip in dev mode so
@@ -264,6 +269,25 @@ static class Program
         }
 
         Application.Run(ctx!);
+    }
+
+    /// <summary>Best-effort delete of ProdToy.exe.old-* files left by the
+    /// updater's rename-swap. A file still locked by a lingering --mcp bridge
+    /// process survives until a later start.</summary>
+    private static void CleanupOldExeAsides()
+    {
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(AppPaths.Root, "ProdToy.exe.old-*"))
+            {
+                try { File.Delete(f); }
+                catch (Exception ex) { Log.Warn($"Old exe cleanup ({Path.GetFileName(f)}): {ex.Message}"); }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Old exe cleanup failed: {ex.Message}");
+        }
     }
 
     /// <summary>

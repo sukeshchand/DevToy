@@ -443,13 +443,27 @@ if ($proc) {{
 }}
 
 # --- Phase 2: swap host exe. ---
+# Other ProdToy.exe processes can hold the exe open (Claude Code spawns
+# `ProdToy.exe --mcp` bridges from this same file), which blocks an in-place
+# overwrite. Windows DOES allow renaming a running executable, so: rename the
+# live exe aside, then copy the staged one into place. The .old-* file is
+# deleted by a later host start once those processes have exited.
 if ($stagedHostExe -and (Test-Path $stagedHostExe)) {{
-    Log-Line ""Phase 2: copying $stagedHostExe → $exePath""
+    Log-Line ""Phase 2: swapping $stagedHostExe → $exePath""
+    $oldAside = ""$exePath.old-"" + (Get-Date -Format 'yyyyMMddHHmmss')
     try {{
+        if (Test-Path $exePath) {{
+            Move-Item -Path $exePath -Destination $oldAside -Force
+            Log-Line ""Phase 2: live exe renamed aside → $oldAside""
+        }}
         Copy-Item -Path $stagedHostExe -Destination $exePath -Force
         Log-Line ""Phase 2: host exe swapped""
     }} catch {{
         Fail-Log ""Phase 2 ERROR: $($_.Exception.Message)""
+        # If the rename half-succeeded, put the old exe back before rollback.
+        if ((Test-Path $oldAside) -and -not (Test-Path $exePath)) {{
+            try {{ Move-Item -Path $oldAside -Destination $exePath -Force }} catch {{ }}
+        }}
         Rollback-From-Snapshot
         exit 2
     }}
