@@ -4,7 +4,7 @@ using ProdToy.Sdk;
 
 namespace ProdToy.Plugins.ShortCutManager;
 
-[Plugin("ProdToy.Plugin.ShortCutManager", "Shortcuts", "1.0.466",
+[Plugin("ProdToy.Plugin.ShortCutManager", "Shortcuts", "1.0.467",
     Description = "Folder-organized launcher for project shortcuts — Claude CLI, npm, dotnet, custom commands",
     Author = "ProdToy",
     MenuPriority = 250)]
@@ -71,8 +71,8 @@ public partial class ShortCutManagerPlugin : IPlugin, IDoctor
         _idLaunchPipeHandler = context.Host.RegisterPipeHandler("shortcuts.launch", OnIdLaunchPipeCommand);
 
         // Request/response RPC commands driving the Consolidated Launcher from
-        // outside the app: `ProdToy.exe launcher <verb>` CLI and the --mcp
-        // server (so a Claude CLI session can stop/relaunch the apps it edits).
+        // outside the app. Kept for the `ProdToy.exe launcher <verb>` CLI (and
+        // as the legacy path older --mcp servers fall back to).
         foreach (var verb in new[] { "stop-all", "launch-all", "restart-all", "status", "folders" })
         {
             string v = verb;
@@ -80,6 +80,10 @@ public partial class ShortCutManagerPlugin : IPlugin, IDoctor
                 $"shortcuts.launcher.{v}",
                 cmd => LauncherRpc.HandleAsync(_context, v, cmd)));
         }
+
+        // MCP tools (plugin-owned descriptors + handlers): the launcher tools
+        // plus per-row control, log reading, and saved-shortcut CRUD/launch.
+        _launcherRpcHandlers.AddRange(ShortcutMcpTools.RegisterAll(context));
 
         // Refresh registry entries whenever shortcuts change so the menu
         // stays in sync with renames, working-directory edits, etc.

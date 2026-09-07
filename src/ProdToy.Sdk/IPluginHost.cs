@@ -70,6 +70,14 @@ public interface IPluginHost
     /// on dispose.</summary>
     IDisposable RegisterRpcHandler(string command, PipeRpcHandler handler);
 
+    /// <summary>Register an MCP tool: the descriptor appears in the MCP server's
+    /// tools/list and the aggregated mcp-info/help document, and the handler is
+    /// dispatched (UI thread) for each tools/call, receiving the call's
+    /// arguments object as <see cref="PipeCommand.PayloadJson"/>. Return
+    /// single-line JSON with at least {"ok":bool,"message":string}. Returns a
+    /// disposable that removes both the tool and its handler.</summary>
+    IDisposable RegisterMcpTool(McpTool tool, PipeRpcHandler handler);
+
     /// <summary>Register a plugin-owned popup window so the host can route
     /// lifecycle events (theme change, exit) into it. Returns a disposable
     /// that unregisters on dispose.</summary>

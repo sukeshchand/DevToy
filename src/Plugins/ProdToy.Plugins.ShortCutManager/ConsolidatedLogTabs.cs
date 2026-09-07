@@ -798,6 +798,21 @@ sealed class ConsolidatedLogTabs : UserControl
             _tabs.SelectedTab = c.OuterPage;
     }
 
+    /// <summary>Last <paramref name="maxLines"/> lines of a tab's session log
+    /// file, oldest-first (RPC launcher_logs). Returns null when no tab exists
+    /// for the key — i.e. the shortcut hasn't produced output this session.</summary>
+    public List<(string Line, bool IsError)>? ReadTail(string key, int maxLines)
+    {
+        if (!_contentByKey.TryGetValue(key, out var c)) return null;
+        var ring = new Queue<(string, bool)>(Math.Max(1, maxLines));
+        foreach (var t in c.Store.EnumerateAll())
+        {
+            if (ring.Count >= maxLines) ring.Dequeue();
+            ring.Enqueue(t);
+        }
+        return ring.ToList();
+    }
+
     /// <summary>Clear a tab's buffer. Targets the Live sub-tab — matches the
     /// pre-filter behaviour of the right-click "Clear" menu item.</summary>
     public void ClearTab(string key)

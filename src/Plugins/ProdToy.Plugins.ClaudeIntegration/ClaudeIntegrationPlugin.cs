@@ -3,7 +3,7 @@ using ProdToy.Sdk;
 
 namespace ProdToy.Plugins.ClaudeIntegration;
 
-[Plugin("ProdToy.Plugin.ClaudeIntegration", "Claude Integration", "1.0.420",
+[Plugin("ProdToy.Plugin.ClaudeIntegration", "Claude Integration", "1.0.421",
     Description = "Claude Code hooks, status line, and auto-title integration",
     Author = "ProdToy",
     MenuPriority = 300)]
@@ -16,6 +16,7 @@ public partial class ClaudeIntegrationPlugin : IPlugin, IDoctor
     private ChatHistory _chatHistory = null!;
     private ChatPopupForm? _chatPopup;
     private TelegramNotifier _telegram = null!;
+    private readonly List<IDisposable> _mcpToolRegs = new();
 
     public void Install(IPluginContext context)
     {
@@ -100,6 +101,11 @@ public partial class ClaudeIntegrationPlugin : IPlugin, IDoctor
         // → plugin-owned SaveQuestion.
         _notifyHandlerReg = context.Host.RegisterPipeHandler("claude.notify", OnNotifyCommand);
         _saveQuestionHandlerReg = context.Host.RegisterPipeHandler("claude.save-question", OnSaveQuestionCommand);
+
+        // MCP tools: `notify` reuses the full claude.notify pipeline (history +
+        // popup + Telegram); `history_search` reads the saved history.
+        _mcpToolRegs.AddRange(ClaudeMcpTools.RegisterAll(context, _chatHistory,
+            payloadJson => OnNotifyCommand(new PipeCommand("claude.notify", payloadJson))));
     }
 
     private void OnNotifyCommand(PipeCommand cmd)
@@ -277,6 +283,8 @@ public partial class ClaudeIntegrationPlugin : IPlugin, IDoctor
         // Stop is per-run: only in-process teardown (pipe handlers, popup form).
         // Claude settings.json and hook scripts are left alone — they were put
         // there by Install() and are only removed by Uninstall().
+        foreach (var r in _mcpToolRegs) r.Dispose();
+        _mcpToolRegs.Clear();
         _notifyHandlerReg?.Dispose();
         _notifyHandlerReg = null;
         _saveQuestionHandlerReg?.Dispose();

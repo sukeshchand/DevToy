@@ -151,15 +151,34 @@ ProdToy.exe launcher <stop-all|launch-all|restart-all|status|folders> [--folder 
 ProdToy.exe --rpc <command> [--payload <json>]     # generic escape hatch
 
 # MCP stdio server (register in Claude Code; bridges tool calls to the pipe)
-claude mcp add prodtoy -- "%USERPROFILE%\.prod-toy\ProdToy.exe" --mcp
+claude mcp add --scope user prodtoy -- "%USERPROFILE%\.prod-toy\ProdToy.exe" --mcp
+
+# Self-description (generated from McpServerMode.Tools — new tools appear automatically)
+ProdToy.exe mcp-info      # full MCP integration guide (also served by the MCP `help` tool
+                          # and summarized in the initialize handshake's `instructions`)
+ProdToy.exe --help        # short CLI usage
 ```
 
-MCP tools: `launcher_restart_all`, `launcher_launch_all`, `launcher_stop_all`,
-`launcher_status`, `launcher_folders` (all take an optional `folder`). The
-ShortCutManager plugin implements the `shortcuts.launcher.*` commands
-(`LauncherRpc.cs`) by driving the Consolidated Launcher window. Key files:
-`Program.cs` (CLI + pipe client), `Core/McpServerMode.cs`, `Plugin/RpcRouter.cs`,
-`Popup/PopupAppContext.cs` (`RpcPipeServerLoop`).
+**MCP tools are plugin-owned and dynamic**: a plugin calls
+`IPluginHost.RegisterMcpTool(McpTool descriptor, handler)` (SDK `McpTool.cs`) —
+the descriptor (name, description, JSON args schema, help markdown, section)
+feeds the MCP server's `tools/list` and the aggregated `mcp-info`/`help` doc;
+the handler answers on RPC command `mcp.tool.<name>`. The host's
+`McpToolRegistry` aggregates descriptors (`mcp.list-tools` / `mcp.help` pipe
+commands) and mirrors them to `~/.prod-toy/mcp-tools.json` so `tools/list`
+works when the host is down. The `--mcp` server (`Core/McpServerMode.cs`)
+fetches everything live — new plugin tools appear everywhere automatically.
+
+Current tools — ShortCutManager (`ShortcutMcpTools.cs`, `LauncherRpc.cs`,
+`ShortcutRpc.cs`): `launcher_restart_all/launch_all/stop_all/status/folders`,
+`launcher_launch_one/stop_one/restart_one`, `launcher_logs`,
+`shortcut_list/launch/create/delete`. Alarm (`AlarmMcpTools.cs`):
+`alarm_list/create/update/delete/pause/resume/snooze/history`. Screenshot
+(`ScreenshotMcpTools.cs`): `screenshot_capture/list`. ClaudeIntegration
+(`ClaudeMcpTools.cs`): `notify`, `history_search`. Host: `app_info`, `help`.
+
+Other key files: `Program.cs` (CLI + pipe client), `Plugin/RpcRouter.cs`,
+`Plugin/McpToolRegistry.cs`, `Popup/PopupAppContext.cs` (`RpcPipeServerLoop`).
 
 ### Execution Flow
 

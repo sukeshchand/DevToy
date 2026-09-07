@@ -2,7 +2,7 @@ using ProdToy.Sdk;
 
 namespace ProdToy.Plugins.Alarm;
 
-[Plugin("ProdToy.Plugin.Alarm", "Alarms", "1.0.386",
+[Plugin("ProdToy.Plugin.Alarm", "Alarms", "1.0.387",
     Description = "Schedule recurring alarms with popup and sound notifications",
     Author = "ProdToy",
     MenuPriority = 200)]
@@ -11,6 +11,7 @@ public partial class AlarmPlugin : IPlugin, IDoctor
     private IPluginContext _context = null!;
     private AlarmForm? _alarmForm;
     private AlarmHistoryForm? _alarmHistoryForm;
+    private readonly List<IDisposable> _mcpToolRegs = new();
 
     public void Install(IPluginContext context)
     {
@@ -33,6 +34,10 @@ public partial class AlarmPlugin : IPlugin, IDoctor
             var s = context.LoadSettings<AlarmPluginSettings>();
             return s.AlarmHistoryMaxEntries;
         });
+
+        // MCP tools (alarm_list/create/update/delete/pause/resume/snooze/history)
+        // so a Claude instance can set and manage reminders for the user.
+        _mcpToolRegs.AddRange(AlarmMcpTools.RegisterAll(context));
     }
 
     public void Start()
@@ -55,6 +60,8 @@ public partial class AlarmPlugin : IPlugin, IDoctor
         // Symmetric with the += in Start(). Without this, a disable/enable (or any
         // Stop→Start) cycle stacked a second handler → every alarm fired twice.
         AlarmScheduler.AlarmTriggered -= AlarmNotifier.HandleAlarmTriggered;
+        foreach (var r in _mcpToolRegs) r.Dispose();
+        _mcpToolRegs.Clear();
         AlarmScheduler.Stop();
         AlarmStore.StopHistoryFlush();
         AlarmNotifier.Cleanup();

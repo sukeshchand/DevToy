@@ -1086,6 +1086,25 @@ sealed class ConsolidatedLauncherForm : Form
         return false;
     }
 
+    /// <summary>Launch a single shortcut row (RPC launcher_launch_one).</summary>
+    internal void RpcLaunchOne(string id) => LaunchOne(id, focus: false);
+
+    /// <summary>Stop a single shortcut row (RPC launcher_stop_one). True when
+    /// something was actually stopped.</summary>
+    internal bool RpcStopOne(string id) => StopOne(id, silent: true);
+
+    /// <summary>Stop + relaunch a single shortcut row (RPC launcher_restart_one).</summary>
+    internal void RpcRestartOne(string id) => RestartOne(id);
+
+    /// <summary>Tail of a shortcut's console log for this launcher session
+    /// (RPC launcher_logs). Null = no output tab exists for the shortcut yet.
+    /// stderr lines are prefixed with "[err] ".</summary>
+    internal List<string>? RpcReadLog(string id, int maxLines)
+    {
+        var tail = _logTabs.ReadTail(id, maxLines);
+        return tail?.Select(t => t.IsError ? $"[err] {t.Line}" : t.Line).ToList();
+    }
+
     /// <summary>Single-line JSON snapshot of every row for RPC status calls.</summary>
     internal string RpcStatusJson()
     {

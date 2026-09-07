@@ -183,6 +183,30 @@ sealed class ChatHistory
         return null;
     }
 
+    /// <summary>Substring search over title/message/question, newest first,
+    /// across up to <paramref name="maxDays"/> most recent day files. Used by
+    /// the MCP history_search tool.</summary>
+    public List<HistoryEntry> Search(string query, int limit, int maxDays = 60)
+    {
+        var results = new List<HistoryEntry>();
+        foreach (var date in GetAvailableDates().OrderByDescending(d => d).Take(maxDays))
+        {
+            List<HistoryEntry> entries;
+            lock (_lock) entries = LoadDayEntries(date);
+            foreach (var e in entries.OrderByDescending(e => e.Timestamp))
+            {
+                if (e.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    || e.Message.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    || e.Question.Contains(query, StringComparison.OrdinalIgnoreCase))
+                {
+                    results.Add(e);
+                    if (results.Count >= limit) return results;
+                }
+            }
+        }
+        return results;
+    }
+
     public List<HistoryIndex> LoadIndex()
     {
         lock (_lock)

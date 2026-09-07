@@ -13,6 +13,23 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        // Self-description verbs, handled before anything else so a user (or a
+        // Claude instance probing the exe) can discover its capabilities
+        // without ever launching the app or triggering a dialog.
+        //   mcp-info → the full MCP integration guide (registration command,
+        //              every tool, workflow, CLI equivalents).
+        //   --help   → short CLI usage pointing at mcp-info.
+        if (args.Length > 0 && args[0].ToLowerInvariant() is "mcp-info" or "--mcp-info" or "mcp-help")
+        {
+            WriteConsoleLine(McpServerMode.BuildInfoDocument());
+            return;
+        }
+        if (args.Length > 0 && args[0].ToLowerInvariant() is "--help" or "-h" or "/?" or "help")
+        {
+            WriteConsoleLine(BuildCliUsage());
+            return;
+        }
+
         // MCP stdio server mode: `ProdToy.exe --mcp` is registered as an MCP
         // server in Claude Code (stdin/stdout JSON-RPC). It never touches
         // WinForms or the single-instance mutex — it's a thin bridge that
@@ -329,6 +346,26 @@ static class Program
         {
             Log.Warn($"SendToPipe failed: {ex.Message}");
         }
+    }
+
+    private static string BuildCliUsage()
+    {
+        string exe = Environment.ProcessPath ?? "ProdToy.exe";
+        return $"""
+            ProdToy v{AppVersion.Current} — Windows developer utility (tray app + plugins)
+
+            Usage:
+              ProdToy.exe                                       Start the app (tray)
+              ProdToy.exe launcher <verb> [--folder <name>]     Control the Consolidated Launcher
+                    verbs: stop-all | launch-all | restart-all | status | folders
+                    (prints JSON; exit codes: 0 ok, 1 failed, 2 usage/not running)
+              ProdToy.exe --mcp                                 Run as MCP stdio server for Claude Code
+                    register: claude mcp add --scope user prodtoy -- "{exe}" --mcp
+              ProdToy.exe mcp-info                              Print the full MCP integration guide
+              ProdToy.exe --rpc <command> [--payload <json>]    Send a raw RPC pipe command
+              ProdToy.exe --command <name> [--payload <json>]   Send a one-way notification envelope
+              ProdToy.exe --dev                                 Dev mode (run from build output)
+            """;
     }
 
     // ─────────────────────────── launcher CLI / RPC ───────────────────────────

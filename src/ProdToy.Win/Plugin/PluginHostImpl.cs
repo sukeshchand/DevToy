@@ -16,6 +16,7 @@ sealed class PluginHostImpl : IPluginHost
     private readonly DashboardForm _dashboardForm;
     private readonly PipeRouter _pipeRouter;
     private readonly RpcRouter _rpcRouter;
+    private readonly McpToolRegistry _mcpTools = new();
     private readonly List<IPluginPopup> _registeredPopups = new();
 
     // Strong references to popup forms enqueued via QueuePopup. Without
@@ -153,6 +154,62 @@ sealed class PluginHostImpl : IPluginHost
 
     public IDisposable RegisterRpcHandler(string command, PipeRpcHandler handler)
         => _rpcRouter.Register(command, handler);
+
+    public IDisposable RegisterMcpTool(McpTool tool, PipeRpcHandler handler)
+    {
+        var handlerReg = _rpcRouter.Register($"mcp.tool.{tool.Name}", handler);
+        var toolReg = _mcpTools.Register(tool);
+        return new CombinedDisposable(handlerReg, toolReg);
+    }
+
+    /// <summary>Host-owned MCP endpoints: the aggregation commands the `--mcp`
+    /// server queries (tool list + help doc) and the host's own app_info tool.
+    /// Called once from PopupAppContext after construction.</summary>
+    internal void RegisterHostMcpEndpoints()
+    {
+        _rpcRouter.Register("mcp.list-tools", _ => Task.FromResult(_mcpTools.ListToolsJson()));
+        _rpcRouter.Register("mcp.help", _ => Task.FromResult(_mcpTools.HelpJson()));
+
+        RegisterMcpTool(new McpTool(
+            "app_info",
+            "ProdToy application info: host version, install root, and every loaded plugin with its version and enabled state.",
+            null,
+            Section: "Host"),
+            _ => Task.FromResult(BuildAppInfoJson()));
+    }
+
+    private static string BuildAppInfoJson()
+    {
+        var plugins = PluginManager.Plugins.Select(p => new
+        {
+            id = p.Metadata?.Id,
+            name = p.Metadata?.Name,
+            version = p.Metadata?.Version,
+            enabled = p.Enabled,
+            loadError = p.LoadError,
+        });
+        return System.Text.Json.JsonSerializer.Serialize(new
+        {
+            ok = true,
+            version = ProdToy.AppVersion.Current,
+            appRoot = AppPaths.Root,
+            plugins,
+        });
+    }
+
+    private sealed class CombinedDisposable : IDisposable
+    {
+        private readonly IDisposable[] _inner;
+        public CombinedDisposable(params IDisposable[] inner) => _inner = inner;
+        public void Dispose()
+        {
+            foreach (var d in _inner)
+            {
+                try { d.Dispose(); }
+                catch (Exception ex) { Log.Warn($"CombinedDisposable: {ex.Message}"); }
+            }
+        }
+    }
 
     public IDisposable RegisterPopup(IPluginPopup popup)
     {

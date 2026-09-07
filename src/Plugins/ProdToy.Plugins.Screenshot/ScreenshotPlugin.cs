@@ -10,7 +10,7 @@ internal enum HotkeyApplyStatus
     Failed,
 }
 
-[Plugin("ProdToy.Plugin.Screenshot", "Screenshot", "1.0.371",
+[Plugin("ProdToy.Plugin.Screenshot", "Screenshot", "1.0.372",
     Description = "Screen capture and annotation editor",
     Author = "ProdToy",
     MenuPriority = 100)]
@@ -20,6 +20,7 @@ public partial class ScreenshotPlugin : IPlugin, IDoctor
     private IHotkeyRegistration? _hotkeyReg;
     private IDisposable? _tripleCtrlReg;
     private ScreenshotEditorForm? _editorForm;
+    private readonly List<IDisposable> _mcpToolRegs = new();
 
     // Static accessor for theme (used by ScreenshotEditorForm internally)
     private static IPluginHost? _host;
@@ -43,12 +44,17 @@ public partial class ScreenshotPlugin : IPlugin, IDoctor
         PluginLog.Bootstrap(context);
         ScreenshotPaths.Initialize(context.DataDirectory);
         RecentOpenedStore.Initialize(context.DataDirectory);
+
+        // MCP tools: silent screen capture + recent-screenshots listing.
+        _mcpToolRegs.AddRange(ScreenshotMcpTools.RegisterAll(context));
     }
 
     public void Start() => ApplyHotkeyBindings();
 
     public void Stop()
     {
+        foreach (var r in _mcpToolRegs) r.Dispose();
+        _mcpToolRegs.Clear();
         TryDispose(ref _hotkeyReg);
         TryDispose(ref _tripleCtrlReg);
         _context.Host.InvokeOnUI(() =>

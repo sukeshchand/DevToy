@@ -75,6 +75,7 @@ class PopupAppContext : ApplicationContext
 
         // Initialize plugin system
         _pluginHost = new PluginHostImpl(_trayIcon, _popupForm, _dashboardForm);
+        _pluginHost.RegisterHostMcpEndpoints();
         PluginManager.Initialize(_pluginHost);
 
         // Rebuild tray menu and dashboard when plugins change

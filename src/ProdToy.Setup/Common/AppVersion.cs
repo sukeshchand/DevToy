@@ -5,5 +5,5 @@ namespace ProdToy.Setup;
 /// </summary>
 static class AppVersion
 {
-    public const string Current = "1.0.547";
+    public const string Current = "1.0.548";
 }

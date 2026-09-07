@@ -23,6 +23,11 @@ static class LauncherRpc
             if (verb == "folders")
                 return FoldersJson();
 
+            // Row-level verbs resolve the shortcut first — a unique shortcut
+            // name works without a folder argument (its folder wins).
+            if (verb is "launch-one" or "stop-one" or "restart-one" or "logs")
+                return await HandleRowVerbAsync(ctx, verb, cmd, requested);
+
             var resolved = ResolveFolder(requested);
             if (resolved.Error != null) return Fail(resolved.Error);
             string folder = resolved.Folder!;
@@ -90,6 +95,102 @@ static class LauncherRpc
             PluginLog.Error($"launcher RPC '{verb}' failed", ex);
             return Fail(ex.Message);
         }
+    }
+
+    // ─────────────────────────── row-level verbs ───────────────────────────
+
+    private static async Task<string> HandleRowVerbAsync(
+        IPluginContext ctx, string verb, PipeCommand cmd, string? requestedFolder)
+    {
+        string? name = ParseString(cmd.PayloadJson, "name");
+        if (string.IsNullOrWhiteSpace(name))
+            return Fail("Missing 'name' — the shortcut's name (or id).");
+
+        var rs = ResolveShortcut(requestedFolder, name!);
+        if (rs.Error != null) return Fail(rs.Error);
+        var s = rs.Shortcut!;
+        string folder = ShortcutFolders.Normalize(s.FolderPath);
+        string display = folder.Length == 0 ? "(root)" : folder;
+
+        if (verb == "logs")
+        {
+            var open = ConsolidatedLauncherForm.TryGetOpen(folder);
+            if (open == null)
+                return Fail($"Launcher window for '{display}' is not open — session logs exist only "
+                    + "while it is. Launch the shortcut (launcher_launch_one) first.");
+            int lines = Math.Clamp(ParseInt(cmd.PayloadJson, "lines") ?? 100, 1, 2000);
+            var log = open.RpcReadLog(s.Id, lines);
+            if (log == null)
+                return JsonSerializer.Serialize(new
+                {
+                    ok = true,
+                    name = s.Name,
+                    lines = Array.Empty<string>(),
+                    message = "No console output for this shortcut in the current launcher session.",
+                });
+            return JsonSerializer.Serialize(new { ok = true, name = s.Name, count = log.Count, lines = log });
+        }
+
+        bool wasOpen = ConsolidatedLauncherForm.TryGetOpen(folder) != null;
+        var form = ConsolidatedLauncherForm.GetOrCreate(
+            ctx.Host.CurrentTheme, folder, ShortcutsIn(folder));
+        // Same first-probe grace as stop-all: a fresh window hasn't matched
+        // externally started processes yet.
+        if (!wasOpen && verb is "stop-one" or "restart-one")
+            await Task.Delay(4000);
+        if (form.IsDisposed) return Fail("Launcher window was closed while the command ran.");
+
+        switch (verb)
+        {
+            case "launch-one":
+                form.RpcLaunchOne(s.Id);
+                return Ok($"Launch started for '{s.Name}' in '{display}'. Poll launcher_status for progress.");
+            case "stop-one":
+            {
+                bool stopped = form.RpcStopOne(s.Id);
+                return Ok(stopped ? $"Stopped '{s.Name}'." : $"'{s.Name}' had nothing running to stop.");
+            }
+            case "restart-one":
+                form.RpcRestartOne(s.Id);
+                return Ok($"Restart started for '{s.Name}' in '{display}'. Poll launcher_status for progress.");
+            default:
+                return Fail($"Unknown row verb '{verb}'.");
+        }
+    }
+
+    /// <summary>Find one Consolidated-eligible shortcut by name or id,
+    /// optionally scoped to a folder. Ambiguity and misses return an error
+    /// message listing what IS available.</summary>
+    private static (Shortcut? Shortcut, string? Error) ResolveShortcut(string? requestedFolder, string name)
+    {
+        var all = ShortcutStore.Load().Where(s => !s.ExcludeFromConsolidated).ToList();
+        if (!string.IsNullOrWhiteSpace(requestedFolder))
+        {
+            var rf = ResolveFolder(requestedFolder);
+            if (rf.Error != null) return (null, rf.Error);
+            all = all.Where(s => string.Equals(
+                ShortcutFolders.Normalize(s.FolderPath), rf.Folder, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+
+        var matches = all.Where(s =>
+            string.Equals(s.Id, name, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (matches.Count == 1) return (matches[0], null);
+        if (matches.Count > 1)
+        {
+            var homes = matches.Select(m =>
+            {
+                var f = ShortcutFolders.Normalize(m.FolderPath);
+                return $"{m.Name} ({(f.Length == 0 ? "(root)" : f)})";
+            });
+            return (null, $"Shortcut '{name}' is ambiguous: {string.Join(", ", homes)}. Pass a folder.");
+        }
+
+        var available = string.Join(", ", all.Select(s => s.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase));
+        return (null, $"No shortcut named '{name}'."
+            + (available.Length > 0 ? $" Available: {available}." : ""));
     }
 
     // ─────────────────────────── folder resolution ───────────────────────────
@@ -166,15 +267,31 @@ static class LauncherRpc
 
     private static string? ParseFolder(string? payloadJson)
     {
+        var folder = ParseString(payloadJson, "folder");
+        // "(root)" round-trips from FoldersJson's display name.
+        if (string.Equals(folder, "(root)", StringComparison.OrdinalIgnoreCase)) return "";
+        return folder;
+    }
+
+    internal static string? ParseString(string? payloadJson, string prop)
+    {
         if (string.IsNullOrWhiteSpace(payloadJson)) return null;
-        try
-        {
-            var folder = JsonNode.Parse(payloadJson)?["folder"]?.GetValue<string>();
-            // "(root)" round-trips from FoldersJson's display name.
-            if (string.Equals(folder, "(root)", StringComparison.OrdinalIgnoreCase)) return "";
-            return folder;
-        }
-        catch (JsonException) { return null; }
+        try { return JsonNode.Parse(payloadJson)?[prop]?.GetValue<string>(); }
+        catch (Exception) { return null; }   // malformed JSON or non-string value
+    }
+
+    internal static int? ParseInt(string? payloadJson, string prop)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson)) return null;
+        try { return JsonNode.Parse(payloadJson)?[prop]?.GetValue<int>(); }
+        catch (Exception) { return null; }
+    }
+
+    internal static bool? ParseBool(string? payloadJson, string prop)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson)) return null;
+        try { return JsonNode.Parse(payloadJson)?[prop]?.GetValue<bool>(); }
+        catch (Exception) { return null; }
     }
 
     private static string Leaf(string folder)
