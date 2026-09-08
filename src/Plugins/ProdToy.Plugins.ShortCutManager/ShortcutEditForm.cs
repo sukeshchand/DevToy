@@ -611,10 +611,23 @@ class ShortcutEditForm : Form
 
         y = AddSection("INTEGRATION", y);
 
+        // This tab's toggle captions are longer than the shared label column
+        // (labelW) — "Ignore in Consolidated Launcher" overlapped its toggle.
+        // Give the toggles their own column, measured from the widest caption.
+        var integrationCaptionFont = new Font("Segoe UI", 9.5f);
+        string[] integrationCaptions =
+        {
+            "Keep running on Stop All", "Ignore in Consolidated Launcher",
+            "Require administrator", "Show in Explorer right-click", "Add shortcut to desktop",
+        };
+        int toggleX = Math.Max(inputX, pad + integrationCaptions
+            .Max(t => TextRenderer.MeasureText(t, integrationCaptionFont).Width) + 16);
+        int toggleHintW = inputW - (toggleX - inputX);
+
         var keepRunningCaption = new Label
         {
             Text = "Keep running on Stop All",
-            Font = new Font("Segoe UI", 9.5f),
+            Font = integrationCaptionFont,
             ForeColor = theme.TextPrimary,
             AutoSize = true,
             Location = new Point(pad, y + 4),
@@ -624,7 +637,7 @@ class ShortcutEditForm : Form
         _keepRunningToggle = new ToggleSwitch(theme)
         {
             Checked = existing?.ExcludeFromStopAll ?? false,
-            Location = new Point(inputX, y + 2),
+            Location = new Point(toggleX, y + 2),
         };
         _host.Controls.Add(_keepRunningToggle);
         var keepRunningHint = new Label
@@ -633,8 +646,8 @@ class ShortcutEditForm : Form
             Font = new Font("Segoe UI", 8.5f, FontStyle.Italic),
             ForeColor = theme.TextSecondary,
             AutoSize = false,
-            Size = new Size(inputW, 30),
-            Location = new Point(inputX + _keepRunningToggle.Width + 12, y + 4),
+            Size = new Size(toggleHintW, 30),
+            Location = new Point(toggleX + _keepRunningToggle.Width + 12, y + 4),
             BackColor = Color.Transparent,
         };
         _host.Controls.Add(keepRunningHint);
@@ -653,7 +666,7 @@ class ShortcutEditForm : Form
         _ignoreConsolidatedToggle = new ToggleSwitch(theme)
         {
             Checked = existing?.ExcludeFromConsolidated ?? false,
-            Location = new Point(inputX, y + 2),
+            Location = new Point(toggleX, y + 2),
         };
         _host.Controls.Add(_ignoreConsolidatedToggle);
         var ignoreConsolidatedHint = new Label
@@ -662,8 +675,8 @@ class ShortcutEditForm : Form
             Font = new Font("Segoe UI", 8.5f, FontStyle.Italic),
             ForeColor = theme.TextSecondary,
             AutoSize = false,
-            Size = new Size(inputW, 30),
-            Location = new Point(inputX + _ignoreConsolidatedToggle.Width + 12, y + 4),
+            Size = new Size(toggleHintW, 30),
+            Location = new Point(toggleX + _ignoreConsolidatedToggle.Width + 12, y + 4),
             BackColor = Color.Transparent,
         };
         _host.Controls.Add(ignoreConsolidatedHint);
@@ -682,7 +695,7 @@ class ShortcutEditForm : Form
         _adminToggle = new ToggleSwitch(theme)
         {
             Checked = existing?.RequireAdmin ?? false,
-            Location = new Point(inputX, y + 2),
+            Location = new Point(toggleX, y + 2),
         };
         _host.Controls.Add(_adminToggle);
         var adminHint = new Label
@@ -691,7 +704,7 @@ class ShortcutEditForm : Form
             Font = new Font("Segoe UI", 8.5f, FontStyle.Italic),
             ForeColor = theme.TextSecondary,
             AutoSize = true,
-            Location = new Point(inputX + _adminToggle.Width + 12, y + 6),
+            Location = new Point(toggleX + _adminToggle.Width + 12, y + 6),
             BackColor = Color.Transparent,
         };
         _host.Controls.Add(adminHint);
@@ -710,7 +723,7 @@ class ShortcutEditForm : Form
         _explorerMenuToggle = new ToggleSwitch(theme)
         {
             Checked = existing?.ShowInExplorerContextMenu ?? false,
-            Location = new Point(inputX, y + 2),
+            Location = new Point(toggleX, y + 2),
         };
         _host.Controls.Add(_explorerMenuToggle);
         var explorerHint = new Label
@@ -719,7 +732,7 @@ class ShortcutEditForm : Form
             Font = new Font("Segoe UI", 8.5f, FontStyle.Italic),
             ForeColor = theme.TextSecondary,
             AutoSize = true,
-            Location = new Point(inputX + _explorerMenuToggle.Width + 12, y + 6),
+            Location = new Point(toggleX + _explorerMenuToggle.Width + 12, y + 6),
             BackColor = Color.Transparent,
         };
         _host.Controls.Add(explorerHint);
@@ -738,7 +751,7 @@ class ShortcutEditForm : Form
         _desktopShortcutToggle = new ToggleSwitch(theme)
         {
             Checked = existing?.AddToDesktop ?? false,
-            Location = new Point(inputX, y + 2),
+            Location = new Point(toggleX, y + 2),
         };
         _host.Controls.Add(_desktopShortcutToggle);
         var desktopHint = new Label
@@ -747,7 +760,7 @@ class ShortcutEditForm : Form
             Font = new Font("Segoe UI", 8.5f, FontStyle.Italic),
             ForeColor = theme.TextSecondary,
             AutoSize = true,
-            Location = new Point(inputX + _desktopShortcutToggle.Width + 12, y + 6),
+            Location = new Point(toggleX + _desktopShortcutToggle.Width + 12, y + 6),
             BackColor = Color.Transparent,
         };
         _host.Controls.Add(desktopHint);
