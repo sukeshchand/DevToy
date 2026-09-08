@@ -465,6 +465,9 @@ if ($stagedHostExe -and (Test-Path $stagedHostExe)) {{
             try {{ Move-Item -Path $oldAside -Destination $exePath -Force }} catch {{ }}
         }}
         Rollback-From-Snapshot
+        # The host already exited for the swap — bring the previous version
+        # back so a failed update never leaves the user with no app at all.
+        try {{ Start-Process -FilePath $exePath; Log-Line ""  relaunched previous host after Phase 2 failure"" }} catch {{ }}
         exit 2
     }}
 }} else {{
@@ -484,6 +487,7 @@ if (Test-Path $pluginsStagingRoot) {{
         }} catch {{
             Fail-Log ""Phase 3 ERROR deploying $($dir.Name): $($_.Exception.Message)""
             Rollback-From-Snapshot
+            try {{ Start-Process -FilePath $exePath; Log-Line ""  relaunched previous host after Phase 3 failure"" }} catch {{ }}
             exit 3
         }}
     }}
